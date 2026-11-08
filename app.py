@@ -12,7 +12,7 @@ st.set_page_config(page_title="APEX Engine", page_icon="⚡", layout="wide")
 
 CSS = """
 <style>
-.block-container{padding-top:2rem;max-width:1100px}
+.block-container,[data-testid="stMainBlockContainer"]{padding-top:4.5rem !important;max-width:1100px}
 h1,h2,h3{letter-spacing:-.02em}
 .apex-logo{font-weight:800;letter-spacing:.22em;font-size:14px}
 .apex-ey{font-size:11px;letter-spacing:.24em;font-weight:700;color:#2ee6a6;text-transform:uppercase}
