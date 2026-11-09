@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, timedelta
 from statistics import mean, pstdev
 from typing import Optional, Sequence
 
@@ -110,3 +111,50 @@ def banister(
         atl += (load - atl) / atl_tau
         out.append((ctl, atl, ctl - atl))
     return out
+
+
+def estimate_load(duration_min: float, rpe: int) -> float:
+    """Session-RPE load, scaled so that 1 hour at RPE 6 is about 60."""
+    return round(duration_min * rpe / 6, 1)
+
+
+def tsb_state(tsb: float) -> str:
+    if tsb > 25:
+        return "Detraining risk"
+    if tsb >= 5:
+        return "Peak form window"
+    if tsb >= -10:
+        return "Productive training"
+    if tsb >= -30:
+        return "Elevated fatigue"
+    return "Overtraining risk"
+
+
+def load_series(daily: dict[date, float], start: date, end: date):
+    """(day, load, CTL, ATL, TSB) for every day from start to end; rest days count as 0."""
+    days, d = [], start
+    while d <= end:
+        days.append(d)
+        d += timedelta(days=1)
+    vals = banister([daily.get(x, 0.0) for x in days])
+    return [(x, daily.get(x, 0.0), c, a, t) for x, (c, a, t) in zip(days, vals)]
+
+
+def project_tsb(
+    ctl: float,
+    atl: float,
+    days_to_race: int,
+    avg_load: float,
+    taper_days: int = 0,
+    taper_factor: float = 0.5,
+    ctl_tau: float = 42.0,
+    atl_tau: float = 7.0,
+) -> float:
+    """Form (TSB) on race morning if you train at avg_load until then; the last
+    taper_days run at avg_load * taper_factor."""
+    n = max(days_to_race - 1, 0)
+    for i in range(n):
+        load = avg_load * taper_factor if (n - i) <= taper_days else avg_load
+        ctl += (load - ctl) / ctl_tau
+        atl += (load - atl) / atl_tau
+    return ctl - atl

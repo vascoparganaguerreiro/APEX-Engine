@@ -1,4 +1,7 @@
-from engine import banister, hrv_baseline, race_phase, readiness
+from datetime import date
+
+from engine import (banister, estimate_load, hrv_baseline, load_series,
+                    project_tsb, race_phase, readiness, tsb_state)
 
 
 def test_readiness_good_day_is_push():
@@ -37,3 +40,24 @@ def test_banister_converges_to_constant_load():
     out = banister([50] * 400)
     ctl, atl, tsb = out[-1]
     assert abs(ctl - 50) < 0.1 and abs(atl - 50) < 0.1 and abs(tsb) < 0.1
+
+
+def test_estimate_load():
+    assert estimate_load(60, 6) == 60.0
+
+
+def test_tsb_state():
+    assert tsb_state(10) == "Peak form window"
+    assert tsb_state(-40) == "Overtraining risk"
+
+
+def test_load_series_fills_rest_days():
+    s = load_series({date(2026, 1, 1): 100.0}, date(2026, 1, 1), date(2026, 1, 10))
+    assert len(s) == 10 and s[0][1] == 100.0 and s[5][1] == 0.0
+
+
+def test_taper_improves_form():
+    keep = project_tsb(60, 70, 30, 60)
+    taper = project_tsb(60, 70, 30, 60, taper_days=10)
+    assert taper > keep
+    assert abs(project_tsb(50, 50, 20, 50)) < 1e-9

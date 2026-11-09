@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+import pandas as pd
 import streamlit as st
 from supabase import create_client
 
@@ -12,7 +13,7 @@ st.set_page_config(page_title="APEX Engine", page_icon="⚡", layout="wide")
 
 CSS = """
 <style>
-.block-container,[data-testid="stMainBlockContainer"]{padding-top:4.5rem !important;max-width:1100px}
+.block-container{padding-top:2rem;max-width:1100px}
 h1,h2,h3{letter-spacing:-.02em}
 .apex-logo{font-weight:800;letter-spacing:.22em;font-size:14px}
 .apex-ey{font-size:11px;letter-spacing:.24em;font-weight:700;color:#2ee6a6;text-transform:uppercase}
@@ -254,6 +255,91 @@ def page_profile():
             st.error(f"Could not save: {e}")
 
 
+SPORTS = {"run": "Run", "bike": "Bike", "swim": "Swim", "strength": "Strength", "other": "Other"}
+
+
+def page_training():
+    st.markdown('<div class="apex-ey">Performance</div>', unsafe_allow_html=True)
+    st.title("Training load")
+    today = date.today()
+    since = (today - timedelta(days=200)).isoformat()
+    acts = (sb().table("activities")
+            .select("id,started_at,sport,title,duration_s,distance_m,rpe,load")
+            .gte("started_at", since).order("started_at").execute().data or [])
+    daily: dict = {}
+    for a in acts:
+        d = date.fromisoformat(a["started_at"][:10])
+        daily[d] = daily.get(d, 0.0) + float(a.get("load") or 0)
+
+    if daily:
+        series = engine.load_series(daily, today - timedelta(days=180), today)
+        _, _, ctl, atl, tsb = series[-1]
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Fitness (CTL)", f"{ctl:.0f}")
+        m2.metric("Fatigue (ATL)", f"{atl:.0f}")
+        m3.metric("Form (TSB)", f"{tsb:+.0f}", engine.tsb_state(tsb), delta_color="off")
+        df = pd.DataFrame(series[-90:], columns=["day", "Load", "CTL", "ATL", "TSB"]).set_index("day")
+        st.line_chart(df[["CTL", "ATL", "TSB"]], color=["#2ee6a6", "#ff6b6b", "#4da3ff"])
+        st.caption("Last 90 days. CTL = 42-day fitness, ATL = 7-day fatigue, TSB = CTL minus ATL.")
+
+        nxt = (sb().table("races").select("name,race_date,race_type")
+               .gte("race_date", today.isoformat()).order("race_date").limit(1).execute().data)
+        if nxt:
+            r = nxt[0]
+            days = (date.fromisoformat(r["race_date"]) - today).days
+            avg14 = sum(daily.get(today - timedelta(days=i), 0.0) for i in range(14)) / 14
+            taper = engine.TAPER_DAYS.get(r["race_type"], 10)
+            keep = engine.project_tsb(ctl, atl, days, avg14)
+            tap = engine.project_tsb(ctl, atl, days, avg14, taper_days=taper)
+            st.subheader(f"Race-day form: {r['name']}")
+            c1, c2 = st.columns(2)
+            c1.metric("Keep current load", f"{keep:+.0f}", engine.tsb_state(keep), delta_color="off")
+            c2.metric(f"With a {taper}-day taper", f"{tap:+.0f}", engine.tsb_state(tap), delta_color="off")
+            st.caption(f"{days} days to go. Assumes your 14-day average load ({avg14:.0f}/day) until the taper, "
+                       "then half of it. A planning estimate, not a prediction.")
+    else:
+        st.info("No training sessions yet. Import your Garmin history or log a session below.")
+
+    st.subheader("Log a session")
+    with st.form("log_session"):
+        c1, c2, c3 = st.columns(3)
+        d = c1.date_input("Date", value=today, max_value=today)
+        sport = c2.selectbox("Sport", list(SPORTS), format_func=SPORTS.get)
+        minutes = c3.number_input("Duration (min)", 5, 720, 45)
+        c4, c5, c6 = st.columns(3)
+        rpe = c4.slider("Effort (RPE 1-10)", 1, 10, 5)
+        km = c5.number_input("Distance (km, optional)", 0.0, 500.0, 0.0, 0.1)
+        override = c6.number_input("Load override (0 = auto)", 0.0, 1000.0, 0.0, 1.0)
+        title = st.text_input("Title (optional)")
+        ok = st.form_submit_button("Save session")
+    if ok:
+        load = override or engine.estimate_load(minutes, rpe)
+        try:
+            sb().table("activities").insert({
+                "user_id": uid(), "started_at": f"{d.isoformat()}T12:00:00+00:00", "sport": sport,
+                "title": title.strip() or None, "duration_s": int(minutes) * 60,
+                "distance_m": km * 1000 if km else None, "rpe": rpe, "load": load,
+                "source": "manual"}).execute()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Could not save: {e}")
+
+    recent = list(reversed(acts))[:10]
+    if recent:
+        st.subheader("Recent sessions")
+        st.dataframe(pd.DataFrame([{
+            "Date": x["started_at"][:10], "Sport": SPORTS.get(x["sport"], x["sport"]),
+            "Title": x.get("title") or "", "Min": round((x.get("duration_s") or 0) / 60),
+            "Load": x.get("load")} for x in recent]), hide_index=True)
+        with st.expander("Delete a session"):
+            opts = {x["id"]: f"{x['started_at'][:10]} · {SPORTS.get(x['sport'], x['sport'])} · "
+                             f"{round((x.get('duration_s') or 0) / 60)} min" for x in recent}
+            sel = st.selectbox("Session", list(opts), format_func=opts.get)
+            if st.button("Delete session"):
+                sb().table("activities").delete().eq("id", sel).execute()
+                st.rerun()
+
+
 # ------------------------------------------------------------------- main
 def main():
     st.markdown(CSS, unsafe_allow_html=True)
@@ -263,11 +349,11 @@ def main():
     with st.sidebar:
         st.markdown('<div class="apex-logo">⚡ APEX ENGINE</div>', unsafe_allow_html=True)
         st.caption(st.session_state.user.email)
-        page = st.radio("Navigate", ["Today", "Races", "Profile"], label_visibility="collapsed")
+        page = st.radio("Navigate", ["Today", "Training", "Races", "Profile"], label_visibility="collapsed")
         if st.button("Sign out"):
             sign_out()
             st.rerun()
-    pages = {"Today": page_today, "Races": page_racehub, "Profile": page_profile}
+    pages = {"Today": page_today, "Training": page_training, "Races": page_racehub, "Profile": page_profile}
     try:
         pages[page]()
     except Exception as e:
