@@ -1,12 +1,13 @@
 """APEX Engine - private beta, step 2: login + Today + RaceHub + Profile."""
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 import pandas as pd
 import streamlit as st
 from supabase import create_client
 
+import coach
 import engine
 
 st.set_page_config(page_title="APEX Engine", page_icon="⚡", layout="wide")
@@ -340,6 +341,107 @@ def page_training():
                 st.rerun()
 
 
+def gather_context():
+    """Read the athlete's data and turn it into the text the coach sees."""
+    today = date.today()
+    prof = get_profile()
+    rows = (sb().table("daily_metrics")
+            .select("day,hrv_ms,rhr_bpm,sleep_minutes,sleep_score,body_battery,stress_avg")
+            .gte("day", (today - timedelta(days=15)).isoformat()).order("day").execute().data or [])
+    acts = (sb().table("activities").select("started_at,sport,title,duration_s,load")
+            .gte("started_at", (today - timedelta(days=200)).isoformat()).order("started_at").execute().data or [])
+
+    res = None
+    if rows:
+        latest = rows[-1]
+        prior = [r for r in rows if r["day"] != latest["day"]][-14:]
+        sleep_h = latest["sleep_minutes"] / 60 if latest.get("sleep_minutes") else None
+        res = engine.readiness(
+            hrv=latest.get("hrv_ms"), rhr=latest.get("rhr_bpm"), sleep_h=sleep_h,
+            hrv_prior=[r.get("hrv_ms") for r in prior], rhr_prior=[r.get("rhr_bpm") for r in prior],
+            sleep_goal_h=float(prof.get("sleep_goal_h") or 8.0))
+
+    daily: dict = {}
+    for x in acts:
+        d = date.fromisoformat(x["started_at"][:10])
+        daily[d] = daily.get(d, 0.0) + float(x.get("load") or 0)
+    load, race = None, None
+    if daily:
+        _, _, ctl, atl, tsb = engine.load_series(daily, today - timedelta(days=180), today)[-1]
+        load = (ctl, atl, tsb, engine.tsb_state(tsb))
+        nxt = (sb().table("races").select("name,race_date,race_type,priority,goal")
+               .gte("race_date", today.isoformat()).order("race_date").limit(1).execute().data)
+        if nxt:
+            r = nxt[0]
+            days = (date.fromisoformat(r["race_date"]) - today).days
+            avg14 = sum(daily.get(today - timedelta(days=i), 0.0) for i in range(14)) / 14
+            taper = engine.TAPER_DAYS.get(r["race_type"], 10)
+            race = {**r, "days": days, "phase": engine.race_phase(days, r["race_type"]), "taper_days": taper,
+                    "keep": engine.project_tsb(ctl, atl, days, avg14),
+                    "taper": engine.project_tsb(ctl, atl, days, avg14, taper_days=taper)}
+    sessions = [{"day": x["started_at"][:10], "sport": x["sport"], "title": x.get("title"),
+                 "minutes": round((x.get("duration_s") or 0) / 60), "load": x.get("load")} for x in acts]
+    return coach.build_context(today, prof, rows, sessions, load, res, race)
+
+
+STARTERS = ["Should I train hard today?", "How is my recovery trending?",
+            "How should I prepare for my next race?", "What should I eat before and after a hard session?"]
+
+
+def page_coach():
+    st.markdown('<div class="apex-ey">Insights</div>', unsafe_allow_html=True)
+    st.title("AI Coach")
+    cfg = st.secrets.get("gemini", {})
+    key = cfg.get("api_key")
+    if not key:
+        st.warning("The AI Coach is not set up yet: add your Gemini key under [gemini] in the app Secrets.")
+        return
+    models = [cfg.get("model") or "gemini-2.5-flash", "gemini-flash-latest"]
+    limit = int(cfg.get("daily_limit") or 20)
+    st.caption("Answers are based on your own APEX data. A summary of it is sent to Google's Gemini to write each "
+               "answer. Guidance only, not medical advice.")
+
+    hist = (sb().table("coach_messages").select("role,content").order("created_at", desc=True)
+            .limit(40).execute().data or [])[::-1]
+    for m in hist:
+        st.chat_message(m["role"]).write(m["content"])
+
+    prompt = st.chat_input("Ask your coach...") or st.session_state.pop("coach_prefill", None)
+    if not hist and not prompt:
+        cols = st.columns(2)
+        for i, q in enumerate(STARTERS):
+            if cols[i % 2].button(q, key=f"starter{i}"):
+                st.session_state.coach_prefill = q
+                st.rerun()
+
+    if prompt:
+        start = datetime.combine(date.today(), time.min, tzinfo=timezone.utc).isoformat()
+        used = sb().table("coach_messages").select("id", count="exact").eq("role", "user") \
+            .gte("created_at", start).execute().count or 0
+        if used >= limit:
+            st.warning(f"Daily limit of {limit} questions reached. Come back tomorrow.")
+        else:
+            st.chat_message("user").write(prompt)
+            with st.chat_message("assistant"):
+                try:
+                    with st.spinner("Thinking..."):
+                        reply = coach.ask(key, models, gather_context(), hist[-20:], prompt)
+                    st.write(reply)
+                    sb().table("coach_messages").insert([
+                        {"user_id": uid(), "role": "user", "content": prompt},
+                        {"user_id": uid(), "role": "assistant", "content": reply}]).execute()
+                except Exception as e:
+                    msg = str(e)
+                    if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                        st.warning("The free Gemini quota is used up for now. Try again later.")
+                    else:
+                        st.error(f"The coach could not answer: {msg[:300]}")
+
+    if hist and st.button("Clear conversation"):
+        sb().table("coach_messages").delete().eq("user_id", uid()).execute()
+        st.rerun()
+
+
 # ------------------------------------------------------------------- main
 def main():
     st.markdown(CSS, unsafe_allow_html=True)
@@ -349,11 +451,11 @@ def main():
     with st.sidebar:
         st.markdown('<div class="apex-logo">⚡ APEX ENGINE</div>', unsafe_allow_html=True)
         st.caption(st.session_state.user.email)
-        page = st.radio("Navigate", ["Today", "Training", "Races", "Profile"], label_visibility="collapsed")
+        page = st.radio("Navigate", ["Today", "Training", "Coach", "Races", "Profile"], label_visibility="collapsed")
         if st.button("Sign out"):
             sign_out()
             st.rerun()
-    pages = {"Today": page_today, "Training": page_training, "Races": page_racehub, "Profile": page_profile}
+    pages = {"Today": page_today, "Training": page_training, "Coach": page_coach, "Races": page_racehub, "Profile": page_profile}
     try:
         pages[page]()
     except Exception as e:
