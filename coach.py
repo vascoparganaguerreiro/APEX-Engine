@@ -1,6 +1,8 @@
 """AI Coach helpers: build the athlete-data context and call Gemini. No Streamlit in here."""
 from __future__ import annotations
 
+import re
+
 SYSTEM_PROMPT = """You are APEX Coach, a sports-science assistant inside the APEX Engine app, \
 talking to one endurance athlete about their own data.
 
@@ -72,26 +74,74 @@ def build_context(today, profile, days, sessions, load, readiness, race) -> str:
     return "\n".join(lines)
 
 
-def ask(api_key: str, models: list[str], context: str, history: list[dict], user_msg: str) -> str:
-    """Call Gemini with the system prompt + athlete data. Tries each model id in turn."""
+_NOT_CHAT = ("image", "tts", "live", "audio", "embedding", "imagen", "veo", "robotics", "computer",
+             "learnlm", "gemma", "nano", "banana", "aqa", "native")
+_RETRY_WITH_NEXT = ("404", "NOT_FOUND", "429", "RESOURCE_EXHAUSTED", "403", "PERMISSION_DENIED")
+
+
+def _client(api_key: str):
     from google import genai
     from google.genai import types
+    # The "-latest" aliases and newer models live on v1beta.
+    return genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version="v1beta"))
 
-    client = genai.Client(api_key=api_key)
+
+def discover_models(client) -> list[str]:
+    """Text models this API key can really call, best guess first (flash before lite before pro,
+    stable before preview, newest first). Model names change often, so we ask Google instead of hardcoding."""
+    found = []
+    for m in client.models.list():
+        name = (getattr(m, "name", "") or "").replace("models/", "")
+        actions = getattr(m, "supported_actions", None) or []
+        if not name.startswith("gemini-") or any(b in name for b in _NOT_CHAT):
+            continue
+        if actions and "generateContent" not in actions:
+            continue
+        found.append(name)
+
+    def score(n: str):
+        v = re.search(r"gemini-(\d+(?:\.\d+)?)", n)
+        version = float(v.group(1)) if v else 0.0
+        tier = 2 if ("flash" in n and "lite" not in n) else 1 if "lite" in n else 0
+        stable = 0 if any(x in n for x in ("preview", "exp")) else 1
+        return (tier, stable, version, 0 if n.endswith("-latest") else 1)
+
+    return sorted(set(found), key=score, reverse=True)
+
+
+def list_models(api_key: str) -> list[str]:
+    return discover_models(_client(api_key))
+
+
+def ask(api_key: str, preferred: list, context: str, history: list[dict], user_msg: str):
+    """Call Gemini with the system prompt + athlete data. Returns (answer, model_used).
+    Tries the preferred model ids first, then models discovered for this key. A model that is
+    missing or out of quota is skipped and the next one is tried."""
+    from google.genai import types
+
+    client = _client(api_key)
     contents = [types.Content(role="user" if m["role"] == "user" else "model",
                               parts=[types.Part(text=m["content"])]) for m in history]
     contents.append(types.Content(role="user", parts=[types.Part(text=user_msg)]))
     config = types.GenerateContentConfig(system_instruction=f"{SYSTEM_PROMPT}\n\nATHLETE DATA\n{context}")
 
-    last_err = None
-    for model in models:
+    candidates = [m for m in preferred if m]
+    discovered, i, last = False, 0, None
+    while True:
+        if i >= len(candidates):
+            if discovered:
+                break
+            candidates += [m for m in discover_models(client)[:5] if m not in candidates]
+            discovered = True
+            continue
+        model, i = candidates[i], i + 1
         try:
             resp = client.models.generate_content(model=model, contents=contents, config=config)
             if resp.text:
-                return resp.text
-            last_err = RuntimeError("The model returned an empty answer.")
-        except Exception as e:                       # try the next model only for "not found"
-            last_err = e
-            if "404" not in str(e) and "NOT_FOUND" not in str(e):
+                return resp.text, model
+            last = RuntimeError(f"{model} returned an empty answer.")
+        except Exception as e:
+            last = e
+            if not any(k in str(e) for k in _RETRY_WITH_NEXT):
                 break
-    raise last_err or RuntimeError("No model available.")
+    raise last or RuntimeError("No Gemini model is available for this API key.")
