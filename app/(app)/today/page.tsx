@@ -93,11 +93,11 @@ export default function TodayPage() {
     if (res.error) { setError(res.error); return; }
     if (Object.keys(res.patch).length === 0) { setError(null); setFormMsg("Nothing to save: no field was filled in or changed."); return; }
     setSaving(true);
-    // Only the changed fields are written, so the other measurements (and their sources) stay untouched.
-    const { error: err } = await getSupabase().from("daily_metrics").upsert(
-      { user_id: session.user.id, day, ...res.patch, ...(existing ? {} : { source: "manual" }) },
-      { onConflict: "user_id,day" },
-    );
+    // Atomic function in Postgres: only the supplied fields are written; everything else (other measurements,
+    // sleep score, provenance) is left exactly as it is.
+    const { error: err } = await getSupabase().rpc("apply_manual_metrics", {
+      p_day: day, p_hrv: res.patch.hrv_ms ?? null, p_rhr: res.patch.rhr_bpm ?? null, p_sleep_minutes: res.patch.sleep_minutes ?? null,
+    });
     setSaving(false);
     if (err) { setError(err.message); return; }
     setError(null);

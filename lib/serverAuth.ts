@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { IntervalsError } from "@/lib/intervals";
+import { ConnectionError } from "@/lib/connectionStore";
+import { CryptoConfigError } from "@/lib/crypto";
 
 /** Server-side: identify the caller from the Bearer token and return a Supabase client
  *  that acts as that user (row-level security applies). */
@@ -18,7 +20,11 @@ export async function authUser(req: Request): Promise<{ sb: SupabaseClient; uid:
 }
 
 export function errorResponse(e: unknown, label: string): Response {
-  if (e instanceof IntervalsError) return Response.json({ error: e.message }, { status: e.status });
+  if (e instanceof IntervalsError || e instanceof ConnectionError) return Response.json({ error: e.message }, { status: e.status });
+  if (e instanceof CryptoConfigError) {
+    console.error(label, "encryption is not configured");
+    return Response.json({ error: "The server encryption settings are missing or invalid." }, { status: 500 });
+  }
   console.error(label, e instanceof Error ? e.message : "unknown");
   return Response.json({ error: "Unexpected error." }, { status: 500 });
 }

@@ -18,7 +18,7 @@ export default function IntervalsCard() {
   const [msg, setMsg] = useState<Msg>(null);
 
   const load = useCallback(async () => {
-    // Never select api_key here: the browser only needs to know that a connection exists.
+    // Only non-secret columns: the browser just needs to know that a connection exists.
     const { data, error } = await getSupabase().from("intervals_connections").select("athlete_id,last_sync_at").maybeSingle();
     if (error) { setMsg({ kind: "error", text: error.message }); setConn(null); return; }
     setConn((data as Conn | null) ?? null);

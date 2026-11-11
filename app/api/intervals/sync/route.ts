@@ -1,5 +1,4 @@
 import { IntervalsError, fetchActivities, fetchWellness } from "@/lib/intervals";
-import { mergeSync, sameMetrics, type MetricRow } from "@/lib/provenance";
 import { authUser, errorResponse } from "@/lib/serverAuth";
 import { getConnection, markSynced } from "@/lib/serverConnections";
 
@@ -26,27 +25,13 @@ export async function POST(req: Request): Promise<Response> {
       fetchActivities(conn.athleteId, conn.apiKey, oldest, newest),
     ]);
 
-    // Field-level merge: manual (or legacy/unknown-source) values are never overwritten by sync,
-    // and rows that would not change are not written at all.
+    // One atomic statement in Postgres (06_metric_provenance.sql): manual and legacy_unknown values are never
+    // overwritten, even by a manual edit that commits while this sync is running. No read-then-write here.
     let metricsSaved = 0;
     if (wellness.length) {
-      const { data: existing, error: eErr } = await sb.from("daily_metrics")
-        .select("day,source,hrv_ms,rhr_bpm,sleep_minutes,sleep_score,hrv_source,rhr_source,sleep_source,sleep_score_source")
-        .gte("day", oldest).lte("day", newest);
-      if (eErr) throw new IntervalsError(500, "Could not read existing wellness data (did you run 06_metric_provenance.sql?).");
-      const byDay = new Map<string, MetricRow & { source: string | null }>((existing ?? []).map((r) => [r.day as string, r as MetricRow & { source: string | null }]));
-      const rows = [];
-      for (const w of wellness) {
-        const old = byDay.get(w.day) ?? null;
-        const merged = mergeSync(old, w);
-        if (sameMetrics(old, merged)) continue;
-        rows.push({ user_id: uid, day: w.day, source: old?.source ?? "intervals", ...merged });
-      }
-      if (rows.length) {
-        const { error } = await sb.from("daily_metrics").upsert(rows, { onConflict: "user_id,day" });
-        if (error) throw new IntervalsError(500, "Could not save wellness data.");
-      }
-      metricsSaved = rows.length;
+      const { data, error } = await sb.rpc("apply_synced_metrics", { p_rows: wellness });
+      if (error) throw new IntervalsError(500, "Could not save wellness data (did you run 06_metric_provenance.sql?).");
+      metricsSaved = Number(data ?? 0);
     }
 
     if (acts.length) {
