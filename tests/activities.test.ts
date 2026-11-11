@@ -1,6 +1,6 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
-import { filterActivities, summarizeActivities, addDaysIso, formatDistance, formatDuration, paceLabel, weekStart, weekTotals, localDay, type Activity } from "../lib/activities.ts";
+import { dailyLoads, filterActivities, summarizeActivities, addDaysIso, formatDistance, formatDuration, paceLabel, weekStart, weekTotals, localDay, type Activity } from "../lib/activities.ts";
 
 const act = (over: Partial<Activity>): Activity => ({
   id: 1, started_at: "2026-11-09T08:00:00Z", sport: "run", title: null, duration_s: 3600, distance_m: 10000,
@@ -11,10 +11,10 @@ test("durations and distances read naturally", () => {
   assert.equal(formatDuration(3540), "59m");
   assert.equal(formatDuration(3900), "1h 05m");
   assert.equal(formatDuration(3599), "1h 00m");
-  assert.equal(formatDuration(null), "â€”");
+  assert.equal(formatDuration(null), "—");
   assert.equal(formatDistance(10700), "10.7 km");
   assert.equal(formatDistance(850), "850 m");
-  assert.equal(formatDistance(null), "â€”");
+  assert.equal(formatDistance(null), "—");
 });
 
 test("pace: run min/km, bike km/h, swim min/100m", () => {
@@ -72,4 +72,12 @@ test("summary totals and pace only for a single sport", () => {
   assert.equal(s.load, 90);
   assert.equal(s.pace, "5:00/km");
   assert.equal(summarizeActivities(acts, "all").pace, null);
+});
+
+test("daily loads add up per local day and skip empty loads", () => {
+  const d = dailyLoads([
+    { started_at: "2026-11-09T08:00:00Z", load: 50 }, { started_at: "2026-11-09T17:00:00Z", load: 30.5 },
+    { started_at: "2026-11-10T08:00:00Z", load: null },
+  ], "UTC");
+  assert.deepEqual(d, { "2026-11-09": 80.5 });
 });

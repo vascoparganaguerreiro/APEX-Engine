@@ -121,6 +121,17 @@ export function loadSeries(daily: Record<string, number>, start: string, end: st
   return days.map((d, i) => ({ day: d, load: daily[d] ?? 0, ctl: vals[i][0], atl: vals[i][1], tsb: vals[i][2] }));
 }
 
+export interface TrendPoint { day: string; hrv: number | null; load: number; ctl: number; atl: number; tsb: number }
+
+/** Daily CTL/ATL/TSB plus HRV for start..end. The model is warmed up on earlier days so CTL is not
+ *  artificially low at the start of the window. */
+export function trendSeries(loads: Record<string, number>, hrvByDay: Record<string, number | null>,
+                            start: string, end: string, warmupDays = 180): TrendPoint[] {
+  return loadSeries(loads, addDays(start, -warmupDays), end)
+    .filter((p) => p.day >= start)
+    .map((p) => ({ ...p, hrv: hrvByDay[p.day] ?? null }));
+}
+
 /** Form (TSB) on race morning if you train at avgLoad until then; the last taperDays run at avgLoad * taperFactor. */
 export function projectTsb(ctl: number, atl: number, daysToRace: number, avgLoad: number,
                            taperDays = 0, taperFactor = 0.5, ctlTau = 42, atlTau = 7): number {

@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { banister, estimateLoad, hrvBaseline, loadSeries, projectTsb, racePhase, readiness, tsbState, addDays, daysBetween } from "../lib/engine.ts";
+import { trendSeries, banister, estimateLoad, hrvBaseline, loadSeries, projectTsb, racePhase, readiness, tsbState, addDays, daysBetween } from "../lib/engine.ts";
 
 const ref = JSON.parse(readFileSync(new URL("./reference.json", import.meta.url), "utf8"));
 const close = (a: number, b: number, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`);
@@ -58,4 +58,15 @@ test("load helpers", () => {
   assert.equal(s.length, 10);
   assert.equal(s[0].load, 100);
   assert.equal(s[5].load, 0);
+});
+
+test("trendSeries warms up before the window and attaches HRV", () => {
+  const s = trendSeries({ "2026-11-01": 100 }, { "2026-11-02": 60 }, "2026-11-01", "2026-11-03");
+  assert.equal(s.length, 3);
+  assert.equal(s[0].day, "2026-11-01");
+  assert.ok(s[0].atl > s[0].ctl);              // one hard day: fatigue above fitness
+  assert.equal(s[1].hrv, 60);
+  assert.equal(s[2].hrv, null);
+  const warm = trendSeries({ "2026-10-01": 100, "2026-10-02": 100 }, {}, "2026-11-01", "2026-11-01");
+  assert.ok(warm[0].ctl > 0);                  // earlier training still counts
 });

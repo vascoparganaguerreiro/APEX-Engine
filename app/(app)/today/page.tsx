@@ -1,8 +1,9 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
-import { addDays, readiness } from "@/lib/engine";
+import { addDays, readiness, trendSeries } from "@/lib/engine";
+import { dailyLoads } from "@/lib/activities";
 import { todayIso } from "@/lib/dates";
 import type { DailyRow } from "@/lib/types";
 import TodayView from "@/components/TodayView";
@@ -15,6 +16,7 @@ const num = (v: unknown): number | null => (v === null || v === undefined ? null
 export default function TodayPage() {
   const { session } = useAuth();
   const [rows, setRows] = useState<DailyRow[] | null>(null);
+  const [loads, setLoads] = useState<Record<string, number>>({});
   const [goal, setGoal] = useState(8);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,13 +29,17 @@ export default function TodayPage() {
   const load = useCallback(async () => {
     try {
       const sb = getSupabase();
-      const since = addDays(todayIso(), -15);
-      const [prof, daily] = await Promise.all([
+      const since = addDays(todayIso(), -45);
+      const loadSince = addDays(todayIso(), -210);   // CTL needs months of history to be meaningful
+      const [prof, daily, acts] = await Promise.all([
         sb.from("profiles").select("sleep_goal_h").maybeSingle(),
-        sb.from("daily_metrics").select("day,hrv_ms,rhr_bpm,sleep_minutes").gte("day", since).order("day"),
+        sb.from("daily_metrics").select("day,hrv_ms,rhr_bpm,sleep_minutes,sleep_score").gte("day", since).order("day"),
+        sb.from("activities").select("started_at,load").gte("started_at", `${loadSince}T00:00:00Z`).limit(5000),
       ]);
       if (daily.error) throw daily.error;
+      if (acts.error) throw acts.error;
       setRows((daily.data ?? []) as DailyRow[]);
+      setLoads(dailyLoads((acts.data ?? []) as Array<{ started_at: string; load: number | null }>));
       if (prof.data?.sleep_goal_h) setGoal(Number(prof.data.sleep_goal_h));
       setError(null);
     } catch (e) {
@@ -53,6 +59,13 @@ export default function TodayPage() {
         sleepGoalH: goal,
       })
     : null;
+
+  const today = todayIso();
+  const trend = useMemo(() => {
+    const hrvByDay: Record<string, number | null> = {};
+    for (const r of rows ?? []) hrvByDay[r.day] = num(r.hrv_ms);
+    return trendSeries(loads, hrvByDay, addDays(today, -29), today);
+  }, [rows, loads, today]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -76,7 +89,7 @@ export default function TodayPage() {
       <div className="eyebrow">Command Center</div>
       <h1>Today</h1>
       {error && <div className="notice error">{error}</div>}
-      {rows === null && !error ? <p className="muted">Loading…</p> : <TodayView result={result} latest={latest} goal={goal} />}
+      {rows === null && !error ? <p className="muted">Loading…</p> : <TodayView result={result} latest={latest} goal={goal} today={today} trend={trend} />}
 
       <h2>Log a day</h2>
       <form className="card formgrid" onSubmit={save}>

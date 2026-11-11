@@ -69,6 +69,17 @@ export function weekStart(day: string): string {
   return addDaysIso(day, -((dow + 6) % 7));
 }
 
+/** Total training load (TSS) per local calendar day. */
+export function dailyLoads(acts: ReadonlyArray<Pick<Activity, "started_at" | "load">>, timeZone?: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const a of acts) {
+    if (!a.load) continue;
+    const d = localDay(a.started_at, timeZone);
+    out[d] = (out[d] ?? 0) + a.load;
+  }
+  return out;
+}
+
 /** Filter by sport ("all" keeps everything) and a free-text search over title, note and sport name. */
 export function filterActivities(acts: Activity[], sport: string, query: string): Activity[] {
   const q = query.trim().toLowerCase();

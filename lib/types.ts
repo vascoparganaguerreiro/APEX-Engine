@@ -3,4 +3,5 @@ export interface DailyRow {
   hrv_ms: number | null;
   rhr_bpm: number | null;
   sleep_minutes: number | null;
+  sleep_score?: number | null;
 }
