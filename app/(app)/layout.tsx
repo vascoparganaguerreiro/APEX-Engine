@@ -11,8 +11,9 @@ const NAV = [
   { href: "/import", label: "Import" },
   { href: "/training", label: "Training", soon: true },
   { href: "/coach", label: "Coach", soon: true },
-  { href: "/supplements", label: "Supplements", soon: true },
-  { href: "/biomarkers", label: "Biomarkers", soon: true },
+  { href: "/supplements", label: "Supplements" },
+  { href: "/biomarkers", label: "Biomarkers" },
+  { href: "/timeline", label: "Timeline" },
   { href: "/races", label: "Races", soon: true },
   { href: "/profile", label: "Profile", soon: true },
 ];
@@ -39,7 +40,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             n.soon ? (
               <span key={n.href} className="navitem soon">{n.label} <em>soon</em></span>
             ) : (
-              <Link key={n.href} href={n.href} className={path === n.href ? "navitem on" : "navitem"}>{n.label}</Link>
+              <Link key={n.href} href={n.href} className={path === n.href || path.startsWith(n.href + "/") ? "navitem on" : "navitem"}>{n.label}</Link>
             ),
           )}
         </nav>

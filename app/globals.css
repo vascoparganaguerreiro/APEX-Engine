@@ -74,3 +74,27 @@ textarea:focus{border-color:var(--green)}
 .chart svg{display:block}
 .legend{display:flex;gap:14px;flex-wrap:wrap;margin-left:auto}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+
+/* Supplements, biomarkers, timeline */
+.badge.off{background:#1a1f26;color:var(--muted)}
+.supcard.discontinued{opacity:.72;border-style:dashed}
+.supcard.active{border-left:3px solid var(--green)}
+.slotrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px}
+.slotrow.on{background:var(--card2)}
+.slotrow .check,.check{display:flex;flex-direction:row;align-items:center;gap:8px;margin:0;color:var(--text)}
+.slotrow .check input{width:auto}
+select{background:var(--card2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font:inherit;font-size:15px;outline:0;width:100%}
+.doserow{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 4px;border-bottom:1px solid var(--line)}
+.doserow:last-child{border-bottom:0}.doserow.off{opacity:.45}
+.resultform{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;align-items:end;padding:10px 0}
+.resultform label{margin-bottom:0}
+.markergrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.markercard{display:block;text-decoration:none;color:inherit;transition:border-color .15s}
+.markercard:hover{border-color:var(--green)}
+.markervalue{font-size:28px;font-weight:800;letter-spacing:-.02em;margin:6px 0}.markervalue small{font-size:13px;color:var(--muted);font-weight:500}
+.pill{font-size:11px;font-weight:700;letter-spacing:.04em;border-radius:999px;padding:3px 9px;border:1px solid var(--line);white-space:nowrap}
+.st-ok{color:var(--green);border-color:#1d4a37}.st-low{color:var(--amber);border-color:#5a4520}.st-high{color:var(--red);border-color:#5a2a2a}.st-na{color:var(--muted)}
+.tablewrap{overflow-x:auto;padding:8px 12px}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}.tbl th{text-align:left;color:var(--muted);font-weight:600;font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.tbl td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}.tbl tr:last-child td{border-bottom:0}
+.tl-dot{width:22px;text-align:center}.tl-date{width:92px}

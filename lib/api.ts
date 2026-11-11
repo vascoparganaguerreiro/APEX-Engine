@@ -43,3 +43,22 @@ export interface IntervalsSyncResult { ok: true; days: number; wellness: number;
 export function syncIntervals(days = 14): Promise<IntervalsSyncResult> {
   return post("/api/intervals/sync", { days });
 }
+
+export interface ReportExtractResult {
+  sha256: string;
+  duplicate?: { id: string; collected_on: string };
+  extraction?: import("./health/core").Extraction;
+}
+
+/** Send a lab report to the server for automatic reading. Nothing is saved: the result must be reviewed first. */
+export async function extractReport(file: File): Promise<ReportExtractResult> {
+  const { data } = await getSupabase().auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Please sign in again.");
+  const form = new FormData();
+  form.append("file", file);
+  const r = await fetch("/api/biomarkers/extract", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error ?? `Request failed (${r.status})`);
+  return j as ReportExtractResult;
+}
