@@ -6,8 +6,8 @@ import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
 import { extractReport } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
-import { errMsg } from "@/lib/health/load";
-import { normalizeMarker, rangeStatus, resultKey, seriesKey, validatePanelDate, validateResult, type Panel, type Result } from "@/lib/health/core";
+import { errMsg, loadPanels } from "@/lib/health/load";
+import { isUuid, normalizeMarker, rangeStatus, resultKey, reviewBlocked, seriesKey, validatePanelDate, validateResult, type Panel, type Result } from "@/lib/health/core";
 import ResultForm, { type ResultDraft } from "@/components/health/ResultForm";
 
 const EXT: Record<string, string> = { "application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
@@ -42,9 +42,12 @@ export default function PanelPage() {
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sameDay, setSameDay] = useState<string[]>([]);      // existing tests on the chosen date (soft duplicate warning)
+  const validId = isNew || isUuid(id);
 
   const load = useCallback(async () => {
     if (isNew) return;
+    if (!validId) { setError("This blood test was not found."); return; }
     const sb = getSupabase();
     const [p, r] = await Promise.all([
       sb.from("blood_panels").select("id,collected_on,lab_name,notes,source,report_path,report_filename").eq("id", id).maybeSingle(),
@@ -54,16 +57,22 @@ export default function PanelPage() {
     if (!p.data) { setError("This blood test was not found."); return; }
     setPanel(p.data as Panel); setMeta({ date: p.data.collected_on, lab: p.data.lab_name ?? "", notes: p.data.notes ?? "" });
     setResults(((r.data ?? []) as Result[]).map((x) => ({ ...x, value: Number(x.value), ref_low: x.ref_low === null ? null : Number(x.ref_low), ref_high: x.ref_high === null ? null : Number(x.ref_high) })));
-  }, [id, isNew]);
+  }, [id, isNew, validId]);
   useEffect(() => { if (session) load(); }, [session, load]);
+  useEffect(() => {
+    if (session && isNew) loadPanels().then((p) => setSameDay(p.filter((x) => x.collected_on === meta.date).map((x) => x.id))).catch(() => setSameDay([]));
+  }, [session, isNew, meta.date]);
 
   // ------------------------------------------------------------ file + automatic reading (review before saving)
   async function pick(f: File | undefined) {
-    setError(null); setDup(null); setInfo(null);
+    // A different file invalidates anything read from the previous one and the consent given for it.
+    setError(null); setDup(null); setInfo(null); setConsent(false); setChecked(false);
+    setPending((p) => p.filter((x) => x.source !== "document")); setEditRow(null);
     if (!f) { setFile(null); return; }
-    if (!EXT[f.type]) { setError("Only PDF, PNG, JPEG or WebP files are supported."); return; }
-    if (f.size > MAX_BYTES) { setError("The file is larger than 10 MB."); return; }
-    setFile({ f, sha: await sha256Hex(f) });
+    if (!EXT[f.type]) { setFile(null); setError("Only PDF, PNG, JPEG or WebP files are supported."); return; }
+    if (f.size > MAX_BYTES) { setFile(null); setError("The file is larger than 10 MB."); return; }
+    try { setFile({ f, sha: await sha256Hex(f) }); }
+    catch { setFile(null); setError("This browser could not prepare the file (a secure https connection is required)."); }
   }
   async function read() {
     if (!file) return;
@@ -88,7 +97,7 @@ export default function PanelPage() {
     for (const r of rows) { const v = validateResult(r.draft); if (v) { setError(v); return; } }
     const keys = rows.map((r) => resultKey(r.draft.original_name, r.draft.unit));
     if (new Set(keys).size !== keys.length) { setError("The same marker appears twice with the same unit. Remove or rename one."); return; }
-    if (info?.fromDoc && rows.some((r) => r.source === "document") && !checked) { setError("Confirm that you checked the extracted values against the original report."); return; }
+    if (reviewBlocked(rows, checked)) { setError("Confirm that you checked the extracted values against the original report."); return; }
     setBusy(true);
     const sb = getSupabase();
     let uploaded: string | null = null;
@@ -101,7 +110,7 @@ export default function PanelPage() {
         if (!up.error) uploaded = path;
       }
       const { data, error: e } = await sb.rpc("save_blood_panel", {
-        p_panel: { collected_on: meta.date, lab_name: meta.lab, notes: meta.notes, source: info?.fromDoc ? "document" : "manual", report_path: path, report_filename: file?.f.name.slice(0, 200) ?? null, report_sha256: file?.sha ?? null },
+        p_panel: { collected_on: meta.date, lab_name: meta.lab, notes: meta.notes, source: rows.some((r) => r.source === "document") ? "document" : "manual", report_path: path, report_filename: file?.f.name.slice(0, 200) ?? null, report_sha256: file?.sha ?? null },
         p_results: rows.map((r) => ({ ...toRow(r.draft), source: r.source })),
       });
       if (e) throw e;
@@ -135,8 +144,31 @@ export default function PanelPage() {
     if (e) setError(errMsg(e)); else await load();
   }
   async function openReport() {
+    const w = window.open("", "_blank");            // opened synchronously so the browser does not treat it as a blocked popup
     const { data, error: e } = await getSupabase().storage.from("lab-reports").createSignedUrl(panel!.report_path!, 60);
-    if (e || !data) setError(errMsg(e)); else window.open(data.signedUrl, "_blank", "noopener");
+    if (e || !data) { w?.close(); setError(e ? errMsg(e) : "Could not open the report."); return; }
+    if (w) { w.opener = null; w.location.href = data.signedUrl; } else setError("Your browser blocked the new tab. Allow pop-ups for this site and try again.");
+  }
+  async function attachReport(f: File | undefined) {
+    if (!f || !panel) return;
+    setError(null); setOk(null);
+    if (!EXT[f.type]) { setError("Only PDF, PNG, JPEG or WebP files are supported."); return; }
+    if (f.size > MAX_BYTES) { setError("The file is larger than 10 MB."); return; }
+    const sb = getSupabase();
+    let uploaded: string | null = null;
+    try {
+      const sha = await sha256Hex(f);
+      const path = `${session!.user.id}/${sha}.${EXT[f.type]}`;
+      const up = await sb.storage.from("lab-reports").upload(path, f, { contentType: f.type, upsert: false });
+      if (up.error && !/already exists|Duplicate/i.test(up.error.message)) throw up.error;
+      if (!up.error) uploaded = path;
+      const { error: e } = await sb.from("blood_panels").update({ report_path: path, report_filename: f.name.slice(0, 200), report_sha256: sha }).eq("id", id);
+      if (e) throw e;
+      setOk("Report attached."); await load();
+    } catch (e) {
+      if (uploaded) await sb.storage.from("lab-reports").remove([uploaded]);
+      setError((e as { code?: string })?.code === "23505" ? "This report is already attached to another blood test." : errMsg(e));
+    }
   }
   async function removePanel() {
     if (!window.confirm("Delete this entire blood test and all its results? This cannot be undone.")) return;
@@ -163,7 +195,12 @@ export default function PanelPage() {
       {error && <div className="notice error">{error}</div>}
       {ok && <div className="notice ok">{ok}</div>}
 
-      {metaForm}
+      {!isNew && !panel && !error && <p className="muted">Loading…</p>}
+      {(isNew || panel) && metaForm}
+      {isNew && sameDay.length > 0 && (
+        <div className="notice">You already have {sameDay.length === 1 ? "a blood test" : `${sameDay.length} blood tests`} on this date.
+          {sameDay.length === 1 && <> <Link href={`/biomarkers/panels/${sameDay[0]}`} style={{ color: "var(--green)" }}>Open it</Link> to avoid entering the same results twice.</>}</div>
+      )}
 
       {isNew && (
         <>
@@ -227,6 +264,13 @@ export default function PanelPage() {
 
       {!isNew && panel && (
         <>
+          {!panel.report_path && (
+            <div className="card" style={{ margin: "12px 0" }}>
+              <b className="small">Original report</b>
+              <p className="muted small" style={{ margin: "4px 0 8px" }}>Keep the laboratory&apos;s PDF or photo privately with this test.</p>
+              <input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(e) => { attachReport(e.target.files?.[0]); e.target.value = ""; }} />
+            </div>
+          )}
           {panel.report_path && <div className="row" style={{ margin: "12px 0" }}><button className="btn ghost" onClick={openReport}>Open original report{panel.report_filename ? ` (${panel.report_filename})` : ""}</button>{panel.source === "document" && <span className="muted small">Values were read automatically and confirmed by you.</span>}</div>}
           <h2>Results</h2>
           {results.length === 0 && <div className="notice">No results in this blood test yet.</div>}

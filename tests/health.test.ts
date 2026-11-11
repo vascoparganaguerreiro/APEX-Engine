@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  activeOn, adherence, buildTimeline, slotRows, slotsFrom, change, dueOn, fetchAll, isoWeekday, normalizeMarker, observations, parseExtraction, rangeStatus, sameRange,
+  activeOn, adherence, beforeAfter, buildTimeline, isUuid, reviewBlocked, slotRows, slotsFrom, change, dueOn, fetchAll, isoWeekday, normalizeMarker, observations, parseExtraction, rangeStatus, sameRange,
   splitByUnit, supplementEvents, validatePanelDate, validateResult, validateSchedule, validateSupplement,
   type Panel, type Result, type ResultPoint, type Schedule, type Supplement,
 } from "../lib/health/core.ts";
@@ -245,4 +245,52 @@ test("supplements page: Edit renders the form in place of the card and saves to 
   assert.match(page, /\.update\(base\)\.eq\("id", existing\.id\)/, "existing supplements are updated by id");
   const form = readFileSync(join(root, "components/health/SupplementForm.tsx"), "utf8");
   assert.match(form, /scrollIntoView/, "an opened form is always brought into view");
+});
+test("results from a document can never be saved without explicit confirmation", () => {
+  assert.equal(reviewBlocked([{ source: "document" }, { source: "manual" }], false), true);
+  assert.equal(reviewBlocked([{ source: "document" }], true), false);
+  assert.equal(reviewBlocked([{ source: "manual" }], false), false, "manual entries need no document review");
+  assert.equal(reviewBlocked([], false), false);
+  const page = readFileSync(join(root, "app/(app)/biomarkers/panels/[id]/page.tsx"), "utf8");
+  assert.match(page, /reviewBlocked\(rows, checked\)/, "the check does not depend on view state that picking another file could clear");
+  assert.ok(!/info\?\.fromDoc && rows\.some/.test(page), "the old bypassable condition is gone");
+});
+
+test("uuid check for panel ids", () => {
+  assert.equal(isUuid("3f790245-331f-4866-a920-d493ccf8fe79"), true);
+  assert.equal(isUuid("new"), false);
+  assert.equal(isUuid("../etc"), false);
+});
+
+test("before/after a supplement start or stop uses only real stored tests of one unit", () => {
+  const series = splitByUnit([
+    pt({ id: "a", value: 20, collected_on: "2026-01-10" }), pt({ id: "b", value: 35, collected_on: "2026-04-01" }), pt({ id: "c", value: 28, collected_on: "2026-08-01" }),
+  ])[0];
+  const rows = beforeAfter(series, [sup({ id: "d", name: "Vitamin D3", start_date: "2026-02-01", end_date: "2026-06-01" })]);
+  assert.deepEqual(rows.map((r) => [r.type, r.before?.id, r.after?.id]), [["stop", "b", "c"], ["start", "a", "b"]]);
+  assert.deepEqual(rows[1].change, { abs: 15, pct: 75 });
+  const onStartDay = beforeAfter(series, [sup({ start_date: "2026-04-01" })])[0];
+  assert.equal(onStartDay.before?.id, "b", "a test on the start day counts as before");
+  assert.equal(onStartDay.after?.id, "c");
+  assert.deepEqual(beforeAfter(series, [sup({ start_date: "2030-01-01" })])[0]?.after, null, "no test after yet");
+  assert.deepEqual(beforeAfter(splitByUnit([])[0] ?? { unit: "x", key: "x", points: [] }, [sup()]), []);
+});
+test("biomarker pages: attach report, safe ids, before/after table, AI timeout handling", () => {
+  const panel = readFileSync(join(root, "app/(app)/biomarkers/panels/[id]/page.tsx"), "utf8");
+  assert.match(panel, /async function attachReport/);
+  assert.match(panel, /!isNew && !panel && !error/, "existing panels show a loading state instead of an editable form with default values");
+  assert.match(panel, /isUuid\(id\)/);
+  assert.match(panel, /setPending\(\(p\) => p\.filter\(\(x\) => x\.source !== "document"\)\)/, "picking another file drops rows read from the previous one");
+  const marker = readFileSync(join(root, "app/(app)/biomarkers/[key]/page.tsx"), "utf8");
+  assert.match(marker, /beforeAfter\(cur, sup\.supplements\)/);
+  assert.match(marker, /Supplements recorded as active/);
+  const route = readFileSync(join(root, "app/api/biomarkers/extract/route.ts"), "utf8");
+  assert.match(route, /TimeoutError/);
+});
+
+test("all source files are valid UTF-8 (a bad byte once slipped into a page)", () => {
+  const walk = (dir: string): string[] => (readdirSync(join(root, dir), { recursive: true }) as string[]).map((f) => `${dir}/${f.replace(/\\/g, "/")}`).filter((f) => /\.(tsx?|css|sql)$/.test(f));
+  for (const f of [...walk("app"), ...walk("lib"), ...walk("components"), ...walk("tests")]) {
+    assert.doesNotThrow(() => new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(join(root, f))), `${f} is not valid UTF-8`);
+  }
 });

@@ -353,3 +353,27 @@ export function slotRows(slots: SlotDrafts) {
     days: slots[s].days.map((on, i) => (on ? i + 1 : 0)).filter(Boolean),
   }));
 }
+
+// ------------------------------------------------------------------ biomarker page helpers
+export const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+/** Rows read automatically from a document must be explicitly confirmed by the user before anything is saved. */
+export const reviewBlocked = (rows: Array<{ source: string }>, confirmed: boolean) => rows.some((r) => r.source === "document") && !confirmed;
+
+export interface BeforeAfter {
+  supplement_id: string; name: string; type: "start" | "stop"; date: string;
+  before: ResultPoint | null; after: ResultPoint | null; change: { abs: number; pct: number | null } | null;
+}
+/** For each supplement start/stop: the last test up to that day and the first test after it (one unit only).
+ *  A test taken on the start day counts as "before" (it was most likely drawn before the first dose). Timing only. */
+export function beforeAfter(series: UnitSeries, supplements: Supplement[], max = 8): BeforeAfter[] {
+  const pts = series.points, out: BeforeAfter[] = [];
+  const add = (s: Supplement, type: "start" | "stop", date: string) => {
+    const before = [...pts].reverse().find((p) => p.collected_on <= date) ?? null;
+    const after = pts.find((p) => p.collected_on > date) ?? null;
+    if (!before && !after) return;
+    out.push({ supplement_id: s.id, name: s.name, type, date, before, after, change: before && after ? change(before.value, after.value) : null });
+  };
+  for (const s of supplements) { add(s, "start", s.start_date); if (s.end_date) add(s, "stop", s.end_date); }
+  return out.sort((a, b) => b.date.localeCompare(a.date)).slice(0, max);
+}

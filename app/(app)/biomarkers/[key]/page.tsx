@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/useAuth";
 import { errMsg, loadResults, loadSupplementsAndSchedules } from "@/lib/health/load";
 import {
-  ASSOCIATION_NOTE, change, observations, rangeStatus, sameRange, seriesKey, seriesLabel, splitByUnit, supplementEvents,
+  ASSOCIATION_NOTE, activeOn, beforeAfter, change, observations, rangeStatus, sameRange, seriesKey, seriesLabel, splitByUnit, supplementEvents,
   type ResultPoint, type Schedule, type Supplement,
 } from "@/lib/health/core";
 import BiomarkerChart from "@/components/health/BiomarkerChart";
@@ -34,6 +34,8 @@ export default function MarkerPage() {
   const label = points.length ? seriesLabel(key, points[0].original_name) : key;
   const names = [...new Set(points.map((p) => p.original_name))];
   const notes = useMemo(() => (cur ? observations(cur, sup.supplements) : []), [cur, sup.supplements]);
+  const ba = useMemo(() => (cur ? beforeAfter(cur, sup.supplements) : []), [cur, sup.supplements]);
+  const taking = (d: string) => { const n = sup.supplements.filter((s) => activeOn(s, d)).map((s) => s.name); return n.length ? n.join(", ") : "none recorded"; };
   const rangeChanges = cur ? cur.points.slice(1).some((p, i) => !sameRange(cur.points[i], p)) : false;
 
   return (
@@ -72,7 +74,7 @@ export default function MarkerPage() {
           <h2>Measurements</h2>
           <div className="card tablewrap">
             <table className="tbl">
-              <thead><tr><th>Date</th><th>Result</th><th>Lab range</th><th>Status</th><th>Change</th><th>Laboratory</th></tr></thead>
+              <thead><tr><th>Date</th><th>Result</th><th>Lab range</th><th>Status</th><th>Change</th><th>Laboratory</th><th>Supplements recorded as active</th></tr></thead>
               <tbody>
                 {[...cur.points].reverse().map((p, idx, arr) => {
                   const prev = arr[idx + 1]; const d = prev ? change(prev.value, p.value) : null; const st = rangeStatus(p.value, p.ref_low, p.ref_high);
@@ -83,6 +85,7 @@ export default function MarkerPage() {
                       <td><span className={`pill ${STATUS_CLASS[st]}`}>{STATUS_TEXT[st]}</span></td>
                       <td>{d ? `${d.abs > 0 ? "+" : ""}${d.abs.toFixed(Math.abs(d.abs) < 10 ? 2 : 1)}${d.pct !== null ? ` (${d.pct > 0 ? "+" : ""}${d.pct.toFixed(0)}%)` : ""}` : "–"}</td>
                       <td>{p.lab_name ?? "–"} <Link href={`/biomarkers/panels/${p.panel_id}`} className="muted small">open</Link></td>
+                      <td className="small">{taking(p.collected_on)}</td>
                     </tr>
                   );
                 })}
@@ -90,6 +93,26 @@ export default function MarkerPage() {
             </table>
           </div>
 
+          {ba.length > 0 && (
+            <>
+              <h2>Before and after supplement changes</h2>
+              <div className="card tablewrap">
+                <table className="tbl">
+                  <thead><tr><th>Supplement</th><th>Event</th><th>Last test up to then</th><th>First test after</th><th>Difference</th></tr></thead>
+                  <tbody>
+                    {ba.map((r) => (
+                      <tr key={`${r.supplement_id}-${r.type}-${r.date}`}>
+                        <td>{r.name}</td><td>{r.type === "start" ? "Started" : "Stopped"} {r.date}</td>
+                        <td>{r.before ? `${r.before.value} ${cur.unit} (${r.before.collected_on})` : "no earlier test"}</td>
+                        <td>{r.after ? `${r.after.value} ${cur.unit} (${r.after.collected_on})` : "no later test yet"}</td>
+                        <td>{r.change ? `${r.change.abs > 0 ? "+" : ""}${r.change.abs.toFixed(Math.abs(r.change.abs) < 10 ? 2 : 1)}${r.change.pct !== null ? ` (${r.change.pct > 0 ? "+" : ""}${r.change.pct.toFixed(0)}%)` : ""}` : "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
           <h2>Supplements around these tests</h2>
           {notes.length === 0 ? <div className="notice">Not enough comparable measurements yet (two or more tests in the same unit are needed).</div> : (
             <div className="card"><ul style={{ margin: 0, paddingLeft: 18 }}>{notes.map((n) => <li key={n} className="small" style={{ marginBottom: 6 }}>{n}</li>)}</ul></div>

@@ -34,7 +34,9 @@ async function readReport(key: string, mime: string, data: Buffer): Promise<unkn
   let last = 502;
   for (const model of await models(key)) {
     if (!/^[a-z0-9.\-]+$/.test(model)) continue;
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    let r: Response;
+    try {
+      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       signal: AbortSignal.timeout(50_000),
@@ -42,7 +44,11 @@ async function readReport(key: string, mime: string, data: Buffer): Promise<unkn
         contents: [{ role: "user", parts: [{ text: EXTRACTION_PROMPT }, { inline_data: { mime_type: mime, data: data.toString("base64") } }] }],
         generationConfig: { responseMimeType: "application/json", temperature: 0 },
       }),
-    });
+      });
+    } catch (e) {
+      if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) throw new ExtractError(504, "Reading the report took too long. Try a smaller or clearer file, or enter the results manually.");
+      throw new ExtractError(502, "The AI service is not reachable.");
+    }
     if (!r.ok) { last = r.status; if ([403, 404, 429].includes(r.status)) continue; break; }
     const text = extractText(await r.json());
     if (!text) throw new ExtractError(502, "The AI could not read this file.");
