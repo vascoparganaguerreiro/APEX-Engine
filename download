@@ -1,5 +1,9 @@
-.streamlit/secrets.toml
-__pycache__/
-.venv/
-.pytest_cache/
+node_modules/
+.next/
+out/
 .env
+.env.local
+.env.*.local
+next-env.d.ts
+*.tsbuildinfo
+.vercel/
