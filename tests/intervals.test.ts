@@ -16,7 +16,7 @@ test("activities map sport, units and ids", () => {
   assert.equal(mapSport("Yoga"), "other");
   const a = mapActivity({ id: "i99", start_date: "2026-11-09T08:00:00Z", type: "Run", name: " Easy ", moving_time: 3540,
     distance: 10700.4, average_heartrate: 139.6, icu_training_load: 55.2 });
-  assert.deepEqual(a, { external_id: "i99", started_at: "2026-11-09T08:00:00.000Z", sport: "run", title: "Easy",
+  assert.deepEqual(a, { external_id: "i99", source: "intervals", started_at: "2026-11-09T08:00:00.000Z", sport: "run", title: "Easy",
     duration_s: 3540, distance_m: 10700.4, avg_hr: 140, load: 55 });
   assert.equal(mapActivity({ type: "Run" }), null);
 });
@@ -57,4 +57,15 @@ test("fetchAthlete maps failures to IntervalsError", async () => {
   await assert.rejects(fetchAthlete("i1", "abcdEFGH1234", reply(500)), (e: IntervalsError) => e.status === 502);
   const down = (async () => { throw new TypeError("network"); }) as unknown as typeof fetch;
   await assert.rejects(fetchAthlete("i1", "abcdEFGH1234", down), (e: IntervalsError) => e.status === 502);
+});
+
+test("activity sync: every imported row is labelled source=intervals and deduplicated on (user_id, source, external_id)", async () => {
+  const { readFileSync } = await import("node:fs");
+  assert.equal(mapActivity({ id: 7, start_date: "2026-11-09T08:00:00Z", type: "Ride" })?.source, "intervals");
+  const route = readFileSync(new URL("../app/api/intervals/sync/route.ts", import.meta.url), "utf8");
+  assert.match(route, /onConflict: "user_id,source,external_id"/);
+  assert.ok(!/onConflict: "user_id,external_id"/.test(route), "the old conflict target does not match production's unique key");
+  assert.match(route, /source: "intervals"/);
+  const upsert = route.match(/from\("activities"\)\.upsert\([^;]*;/)?.[0] ?? "";
+  assert.ok(upsert.indexOf("...a") < upsert.indexOf('source: "intervals"'), "source is set after the spread so it cannot be overridden");
 });

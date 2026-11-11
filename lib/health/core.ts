@@ -333,3 +333,23 @@ export async function fetchAll<T>(
   if (total !== null && out.length < total) throw new Error("Could not load all results. Please try again.");
   return out;
 }
+
+// ------------------------------------------------------------------ schedule form drafts (also used to detect "schedule unchanged")
+export interface SlotDraft { on: boolean; dose: string; unit: string; days: boolean[] }
+export type SlotDrafts = Record<Slot, SlotDraft>;
+export const emptySlots = (): SlotDrafts =>
+  Object.fromEntries(SLOTS.map((s) => [s, { on: false, dose: "", unit: "mg", days: Array(7).fill(true) }])) as SlotDrafts;
+
+/** Form state from the schedule rows currently in force (what Edit pre-fills). */
+export function slotsFrom(current: Schedule[]): SlotDrafts {
+  const out = emptySlots();
+  for (const c of current) out[c.slot] = { on: true, dose: String(c.dose), unit: c.dose_unit, days: [1, 2, 3, 4, 5, 6, 7].map((d) => c.days.includes(d)) };
+  return out;
+}
+/** Schedule rows from form state. An unchanged form gives back the same rows, so saving does not create a new schedule version. */
+export function slotRows(slots: SlotDrafts) {
+  return SLOTS.filter((s) => slots[s].on).map((s) => ({
+    slot: s, dose: Number(slots[s].dose.replace(",", ".")), dose_unit: slots[s].unit,
+    days: slots[s].days.map((on, i) => (on ? i + 1 : 0)).filter(Boolean),
+  }));
+}

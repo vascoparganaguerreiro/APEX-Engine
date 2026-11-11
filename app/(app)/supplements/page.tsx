@@ -103,6 +103,11 @@ export default function SupplementsPage() {
     `${SLOT_LABEL[c.slot]} ${c.dose} ${c.dose_unit}${c.days.length < 7 ? ` (${c.days.map((d) => WEEKDAYS[d - 1]).join(", ")})` : ""}`).join(" · ");
 
   function card(s: Supplement) {
+    // Edit opens the form right where the card is (it used to open at the top of the page, off-screen from the button).
+    if (editing !== null && editing !== "new" && editing.id === s.id) {
+      return <SupplementForm key={`edit-${s.id}`} initial={s} today={today} initialSlots={slotsFrom(currentSchedule(s.id))}
+        onSave={(b, sl) => save(b, sl, s)} onCancel={() => setEditing(null)} />;
+    }
     const a = s.status === "active" ? adherence(s.id, sups ?? [], sched, intakes, from30 < s.start_date ? s.start_date : from30, today) : null;
     return (
       <article key={s.id} className={`card supcard ${s.status}`}>
@@ -147,11 +152,7 @@ export default function SupplementsPage() {
       {sups === null && !error && <p className="muted">Loading…</p>}
 
       {sups !== null && !editing && <button className="btn" onClick={() => setEditing("new")}>+ Add supplement</button>}
-      {editing && (
-        <SupplementForm key={editing === "new" ? "new" : editing.id} initial={editing === "new" ? undefined : editing} today={today}
-          initialSlots={editing === "new" ? undefined : slotsFrom(currentSchedule(editing.id))}
-          onSave={(b, sl) => save(b, sl, editing === "new" ? null : editing)} onCancel={() => setEditing(null)} />
-      )}
+      {editing === "new" && <SupplementForm key="new" today={today} onSave={(b, sl) => save(b, sl, null)} onCancel={() => setEditing(null)} />}
       {stopping && (
         <form className="card formgrid" onSubmit={discontinue} style={{ marginTop: 14 }}>
           <b style={{ gridColumn: "1 / -1" }}>Discontinue {stopping.name}</b>

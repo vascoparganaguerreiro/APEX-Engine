@@ -8,7 +8,7 @@ export const maxDuration = 60;
 const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 
 /** POST { days? } (default 14, max 180) -> imports wellness into daily_metrics and
- *  activities into activities (deduplicated by external_id). Notes and AI summaries are kept. */
+ *  activities into activities (deduplicated by user_id, source, external_id). Notes and AI summaries are kept. */
 export async function POST(req: Request): Promise<Response> {
   try {
     const { sb, uid } = await authUser(req);
@@ -36,8 +36,8 @@ export async function POST(req: Request): Promise<Response> {
 
     if (acts.length) {
       const { error } = await sb.from("activities").upsert(
-        acts.map((a) => ({ user_id: uid, ...a })), { onConflict: "user_id,external_id" });
-      if (error) throw new IntervalsError(500, "Could not save activities (did you run 05_intervals.sql?).");
+        acts.map((a) => ({ ...a, user_id: uid, source: "intervals" })), { onConflict: "user_id,source,external_id" });
+      if (error) throw new IntervalsError(500, "Could not save activities.");
     }
 
     await markSynced(uid);

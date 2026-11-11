@@ -19,9 +19,18 @@ revoke all on public.intervals_credentials from public, anon, authenticated;
 -- 2) intervals_connections: browsers may read only non-secret columns and may not write.
 alter table public.intervals_connections alter column api_key drop not null;  -- legacy column, emptied by the server
 alter table public.intervals_connections enable row level security;
+-- Remove every inherited policy. Production has a broad "own_rows" (all commands, authenticated) from the base schema; 05 added "own connection".
+drop policy if exists "own_rows" on public.intervals_connections;
 drop policy if exists "own connection" on public.intervals_connections;
 drop policy if exists "own connection read" on public.intervals_connections;
-create policy "own connection read" on public.intervals_connections for select using (auth.uid() = user_id);
+do $$
+declare p record;
+begin   -- any other leftover policy (whatever its name) is removed too, so only the read-only one below can exist
+  for p in select policyname from pg_policies where schemaname = 'public' and tablename = 'intervals_connections' loop
+    execute format('drop policy %I on public.intervals_connections', p.policyname);
+  end loop;
+end $$;
+create policy "own connection read" on public.intervals_connections for select to authenticated using (user_id = (select auth.uid()));
 revoke all on public.intervals_connections from public, anon, authenticated;
 grant select (user_id, athlete_id, last_sync_at, created_at) on public.intervals_connections to authenticated;
 

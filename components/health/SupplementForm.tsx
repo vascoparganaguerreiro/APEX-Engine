@@ -1,29 +1,15 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  DOSE_UNITS, FORMULATIONS, SLOTS, SLOT_LABEL, WEEKDAYS, validateSchedule, validateSupplement,
-  type Schedule, type Slot, type Supplement,
+  DOSE_UNITS, FORMULATIONS, SLOTS, SLOT_LABEL, WEEKDAYS, emptySlots, slotRows, slotsFrom, validateSchedule, validateSupplement,
+  type Slot, type SlotDraft, type SlotDrafts, type Supplement,
 } from "@/lib/health/core";
 
-export interface SlotDraft { on: boolean; dose: string; unit: string; days: boolean[] }
-export type SlotDrafts = Record<Slot, SlotDraft>;
 export interface SupplementDraft {
   name: string; brand: string; ingredients: string; formulation: string; dose: string; dose_unit: string; notes: string; start_date: string;
 }
-export const emptySlots = (): SlotDrafts =>
-  Object.fromEntries(SLOTS.map((s) => [s, { on: false, dose: "", unit: "mg", days: Array(7).fill(true) }])) as SlotDrafts;
-
-export function slotsFrom(current: Schedule[]): SlotDrafts {
-  const out = emptySlots();
-  for (const c of current) out[c.slot] = { on: true, dose: String(c.dose), unit: c.dose_unit, days: [1, 2, 3, 4, 5, 6, 7].map((d) => c.days.includes(d)) };
-  return out;
-}
-export function slotRows(slots: SlotDrafts) {
-  return SLOTS.filter((s) => slots[s].on).map((s) => ({
-    slot: s, dose: Number(slots[s].dose.replace(",", ".")), dose_unit: slots[s].unit,
-    days: slots[s].days.map((on, i) => (on ? i + 1 : 0)).filter(Boolean),
-  }));
-}
+export { emptySlots, slotsFrom, slotRows };
+export type { SlotDraft, SlotDrafts };
 
 /** Add or edit a supplement and its daily schedule. Doses live in the schedule (versioned), not on the supplement itself. */
 export default function SupplementForm({ initial, initialSlots, today, onSave, onCancel }: {
@@ -37,6 +23,9 @@ export default function SupplementForm({ initial, initialSlots, today, onSave, o
   const [slots, setSlots] = useState<SlotDrafts>(initialSlots ?? emptySlots());
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The form can open far from the button that triggered it: bring it into view so opening is never silent.
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => { formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, []);
   const field = (k: keyof SupplementDraft) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setD({ ...d, [k]: e.target.value });
   const setSlot = (s: Slot, p: Partial<SlotDraft>) => setSlots({ ...slots, [s]: { ...slots[s], ...p } });
 
@@ -54,7 +43,7 @@ export default function SupplementForm({ initial, initialSlots, today, onSave, o
   }
 
   return (
-    <form className="card" onSubmit={submit}>
+    <form ref={formRef} className="card" onSubmit={submit}>
       <h2 style={{ marginTop: 0 }}>{initial ? "Edit supplement" : "Add a supplement"}</h2>
       <div className="formgrid">
         <label>Name<input value={d.name} onChange={field("name")} maxLength={120} required placeholder="e.g. Magnesium glycinate" /></label>

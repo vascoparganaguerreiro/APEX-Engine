@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  activeOn, adherence, buildTimeline, change, dueOn, fetchAll, isoWeekday, normalizeMarker, observations, parseExtraction, rangeStatus, sameRange,
+  activeOn, adherence, buildTimeline, slotRows, slotsFrom, change, dueOn, fetchAll, isoWeekday, normalizeMarker, observations, parseExtraction, rangeStatus, sameRange,
   splitByUnit, supplementEvents, validatePanelDate, validateResult, validateSchedule, validateSupplement,
   type Panel, type Result, type ResultPoint, type Schedule, type Supplement,
 } from "../lib/health/core.ts";
@@ -220,4 +220,29 @@ test("migration 08 corrections: grants, revision policy, function name, report p
   assert.match(sql, /grant execute on function public\.replace_supplement_schedule\(uuid, jsonb, date\) to authenticated/);
   const app = readFileSync(join(root, "app/(app)/supplements/page.tsx"), "utf8");
   assert.match(app, /p_effective: today/);
+});
+test("Edit pre-fills the schedule exactly and an untouched form means no new schedule version", () => {
+  const current: Schedule[] = [
+    sch({ slot: "morning", dose: 200, dose_unit: "mg", days: [1, 3, 5] }),
+    sch({ slot: "dinner", dose: 1000, dose_unit: "IU", days: [1, 2, 3, 4, 5, 6, 7] }),
+  ];
+  const drafts = slotsFrom(current);
+  assert.deepEqual([drafts.morning.on, drafts.morning.dose, drafts.morning.unit], [true, "200", "mg"]);
+  assert.deepEqual(drafts.morning.days, [true, false, true, false, true, false, false]);
+  assert.equal(drafts.lunch.on, false);
+  assert.deepEqual(drafts.dinner.days, Array(7).fill(true));
+  const rows = slotRows(drafts);
+  assert.deepEqual(rows, current.map((c) => ({ slot: c.slot, dose: c.dose, dose_unit: c.dose_unit, days: c.days })));
+  assert.equal(JSON.stringify(slotRows(slotsFrom(current))), JSON.stringify(rows), "unchanged form -> same rows -> the page skips the schedule replace");
+  assert.deepEqual(slotRows(slotsFrom([])), []);
+});
+
+test("supplements page: Edit renders the form in place of the card and saves to the existing supplement", () => {
+  const page = readFileSync(join(root, "app/(app)/supplements/page.tsx"), "utf8");
+  assert.match(page, /editing\.id === s\.id\) \{\s*return <SupplementForm key=\{`edit-\$\{s\.id\}`\} initial=\{s\}/, "the form replaces the card being edited");
+  assert.match(page, /onSave=\{\(b, sl\) => save\(b, sl, s\)\}/, "edit saves against the existing supplement, not a new one");
+  assert.match(page, /editing === "new" && <SupplementForm/, "the top form is only for new supplements");
+  assert.match(page, /\.update\(base\)\.eq\("id", existing\.id\)/, "existing supplements are updated by id");
+  const form = readFileSync(join(root, "components/health/SupplementForm.tsx"), "utf8");
+  assert.match(form, /scrollIntoView/, "an opened form is always brought into view");
 });

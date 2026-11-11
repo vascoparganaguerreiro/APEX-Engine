@@ -42,7 +42,7 @@ export function authHeader(apiKey: string): string {
 // ------------------------------------------------------------------ sync mapping
 export interface WellnessRow { day: string; hrv_ms: number | null; rhr_bpm: number | null; sleep_minutes: number | null; sleep_score: number | null }
 export interface ActivityRow {
-  external_id: string; started_at: string; sport: string; title: string | null;
+  external_id: string; source: "intervals"; started_at: string; sport: string; title: string | null;
   duration_s: number | null; distance_m: number | null; avg_hr: number | null; load: number | null;
 }
 
@@ -83,6 +83,7 @@ export function mapActivity(a: Record<string, unknown>): ActivityRow | null {
   const hr = num(a.average_heartrate), load = num(a.icu_training_load), secs = num(a.moving_time) ?? num(a.elapsed_time);
   return {
     external_id: id,
+    source: "intervals",
     started_at: started,
     sport: mapSport(a.type),
     title: typeof a.name === "string" && a.name.trim() ? a.name.trim() : null,

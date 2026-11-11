@@ -62,3 +62,18 @@ test("routes authenticate first, take the user id only from the verified token, 
     assert.ok(!/Response\.json\([^)]*apiKey/.test(src), `${f} must not return the key`);
   }
 });
+
+test("07 removes the inherited broad policy and leaves one read-only policy for the owner", () => {
+  assert.match(sql, /drop policy if exists "own_rows" on public\.intervals_connections;/);
+  assert.match(sql, /from pg_policies where schemaname = 'public' and tablename = 'intervals_connections'/, "any other leftover policy is dropped too");
+  const created = [...sql.matchAll(/create policy "([^"]+)" on public\.intervals_connections ([^;]*);/g)];
+  assert.equal(created.length, 1, "exactly one policy may exist on intervals_connections");
+  assert.equal(created[0][1], "own connection read");
+  assert.match(created[0][2], /^for select to authenticated using \(user_id = \(select auth\.uid\(\)\)\)$/);
+  assert.ok(sql.lastIndexOf('drop policy if exists "own_rows"') < sql.indexOf('create policy "own connection read"'), "drops come before the create (idempotent re-runs)");
+  // The owner keeps non-secret metadata only; no write privileges and no api_key.
+  assert.match(sql, /grant select \(user_id, athlete_id, last_sync_at, created_at\) on public\.intervals_connections to authenticated;/);
+  assert.ok(!/grant[^;]*\banon\b/.test(sql));
+  assert.ok(!/grant[^;]*api_key/.test(sql));
+  assert.match(sql, /revoke all on public\.intervals_connections from public, anon, authenticated;/);
+});
