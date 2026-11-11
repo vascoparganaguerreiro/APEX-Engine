@@ -90,7 +90,7 @@ export default function TodayPage() {
     if (!session) return;
     setFormMsg(null);
     const res = buildManualPatch(existing, { hrv, rhr, sleepH: sleep });
-    if (res.error) { setError(res.error); return; }
+    if (res.error !== undefined) { setError(res.error); return; }   // narrows the result to its { patch } variant
     if (Object.keys(res.patch).length === 0) { setError(null); setFormMsg("Nothing to save: no field was filled in or changed."); return; }
     setSaving(true);
     // Atomic function in Postgres: only the supplied fields are written; everything else (other measurements,
