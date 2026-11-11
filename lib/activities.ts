@@ -69,6 +69,40 @@ export function weekStart(day: string): string {
   return addDaysIso(day, -((dow + 6) % 7));
 }
 
+/** Filter by sport ("all" keeps everything) and a free-text search over title, note and sport name. */
+export function filterActivities(acts: Activity[], sport: string, query: string): Activity[] {
+  const q = query.trim().toLowerCase();
+  return acts.filter((a) => {
+    if (sport !== "all" && a.sport !== sport) return false;
+    if (!q) return true;
+    const hay = `${a.title ?? ""} ${a.note ?? ""} ${SPORT_LABEL[a.sport] ?? a.sport}`.toLowerCase();
+    return hay.includes(q);
+  });
+}
+
+export interface ActivitySummary {
+  sessions: number;
+  distanceM: number;
+  durationS: number;
+  load: number;
+  /** Average pace/speed for a single distance sport; null when sports are mixed or data is missing. */
+  pace: string | null;
+}
+
+export function summarizeActivities(acts: Activity[], sport: string): ActivitySummary {
+  let distanceM = 0, durationS = 0, load = 0, paceDist = 0, paceDur = 0;
+  for (const a of acts) {
+    durationS += a.duration_s ?? 0;
+    load += a.load ?? 0;
+    if (a.distance_m && ["run", "bike", "swim"].includes(a.sport)) distanceM += a.distance_m;
+    if (a.distance_m && a.duration_s) { paceDist += a.distance_m; paceDur += a.duration_s; }
+  }
+  return {
+    sessions: acts.length, distanceM, durationS, load: Math.round(load),
+    pace: ["run", "bike", "swim"].includes(sport) ? paceLabel(sport, paceDur, paceDist) : null,
+  };
+}
+
 export interface WeekTotals {
   sessions: number;
   minutes: number;

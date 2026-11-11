@@ -1,6 +1,6 @@
-import test from "node:test";
+﻿import test from "node:test";
 import assert from "node:assert/strict";
-import { addDaysIso, formatDistance, formatDuration, paceLabel, weekStart, weekTotals, localDay, type Activity } from "../lib/activities.ts";
+import { filterActivities, summarizeActivities, addDaysIso, formatDistance, formatDuration, paceLabel, weekStart, weekTotals, localDay, type Activity } from "../lib/activities.ts";
 
 const act = (over: Partial<Activity>): Activity => ({
   id: 1, started_at: "2026-11-09T08:00:00Z", sport: "run", title: null, duration_s: 3600, distance_m: 10000,
@@ -11,10 +11,10 @@ test("durations and distances read naturally", () => {
   assert.equal(formatDuration(3540), "59m");
   assert.equal(formatDuration(3900), "1h 05m");
   assert.equal(formatDuration(3599), "1h 00m");
-  assert.equal(formatDuration(null), "—");
+  assert.equal(formatDuration(null), "â€”");
   assert.equal(formatDistance(10700), "10.7 km");
   assert.equal(formatDistance(850), "850 m");
-  assert.equal(formatDistance(null), "—");
+  assert.equal(formatDistance(null), "â€”");
 });
 
 test("pace: run min/km, bike km/h, swim min/100m", () => {
@@ -46,4 +46,30 @@ test("week totals only count that week and only distance sports", () => {
   assert.equal(t.load, 150);
   assert.deepEqual(t.km, { run: 10, bike: 60 });
   assert.equal(localDay("2026-11-09T23:30:00Z", "Europe/Prague"), "2026-11-10");
+});
+
+test("filter by sport and search text", () => {
+  const acts = [
+    act({ id: 1, title: "Easy run", sport: "run" }),
+    act({ id: 2, title: "Hill repeats", sport: "run", note: "felt strong" }),
+    act({ id: 3, title: "Long ride", sport: "bike" }),
+  ];
+  assert.equal(filterActivities(acts, "all", "").length, 3);
+  assert.deepEqual(filterActivities(acts, "run", "").map((a) => a.id), [1, 2]);
+  assert.deepEqual(filterActivities(acts, "all", " STRONG ").map((a) => a.id), [2]);
+  assert.deepEqual(filterActivities(acts, "bike", "run").map((a) => a.id), []);
+});
+
+test("summary totals and pace only for a single sport", () => {
+  const acts = [
+    act({ id: 1, duration_s: 3000, distance_m: 10000, load: 50 }),
+    act({ id: 2, duration_s: 3000, distance_m: 10000, load: 40.4 }),
+  ];
+  const s = summarizeActivities(acts, "run");
+  assert.equal(s.sessions, 2);
+  assert.equal(s.distanceM, 20000);
+  assert.equal(s.durationS, 6000);
+  assert.equal(s.load, 90);
+  assert.equal(s.pace, "5:00/km");
+  assert.equal(summarizeActivities(acts, "all").pace, null);
 });

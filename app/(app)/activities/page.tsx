@@ -4,7 +4,10 @@ import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
 import { summarize } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
-import { addDaysIso, localDay, weekStart, weekTotals, type Activity } from "@/lib/activities";
+import {
+  SPORT_LABEL, addDaysIso, filterActivities, formatDistance, formatDuration, localDay, summarizeActivities,
+  weekStart, weekTotals, type Activity,
+} from "@/lib/activities";
 import ActivityCard from "@/components/ActivityCard";
 import WeekCard from "@/components/WeekCard";
 
@@ -20,6 +23,8 @@ export default function ActivitiesPage() {
   const [weekSummary, setWeekSummary] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | "week" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sport, setSport] = useState("all");
+  const [query, setQuery] = useState("");
 
   const loadActs = useCallback(async () => {
     try {
@@ -47,6 +52,18 @@ export default function ActivitiesPage() {
     [acts, ws, we],
   );
   const totals = useMemo(() => weekTotals(acts ?? [], ws), [acts, ws]);
+
+  // Searching looks across everything loaded (last 200 days); otherwise the list is the selected week.
+  const searching = query.trim() !== "";
+  const shown = useMemo(
+    () => filterActivities(searching ? (acts ?? []) : inWeek, sport, query),
+    [acts, inWeek, sport, query, searching],
+  );
+  const sum = useMemo(() => summarizeActivities(shown, sport), [shown, sport]);
+  const sports = useMemo(() => {
+    const present = new Set((acts ?? []).map((a) => a.sport));
+    return Object.keys(SPORT_LABEL).filter((s) => present.has(s)).concat([...present].filter((s) => !(s in SPORT_LABEL)));
+  }, [acts]);
 
   async function saveNote(id: number, note: string) {
     const { error: err } = await getSupabase().from("activities").update({ note: note || null }).eq("id", id);
@@ -80,8 +97,30 @@ export default function ActivitiesPage() {
             canNext={ws < thisWeek} onPrev={() => setWs(addDaysIso(ws, -7))} onNext={() => setWs(addDaysIso(ws, 7))}
             onSummarize={summarizeWeek} />
           <h2>Sessions</h2>
-          {inWeek.length === 0 && <div className="notice">No sessions recorded this week.</div>}
-          {inWeek.map((a) => (
+          <div className="filters">
+            <input type="search" value={query} onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search title or notes (all loaded sessions)…" aria-label="Search activities" />
+            <div className="row" role="group" aria-label="Filter by sport">
+              {["all", ...sports].map((s) => (
+                <button key={s} type="button" className={sport === s ? "chip on" : "chip"} aria-pressed={sport === s} onClick={() => setSport(s)}>
+                  {s === "all" ? "All" : SPORT_LABEL[s] ?? s}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="kpis">
+            <div className="kpi"><small>Distance</small><b>{sum.distanceM ? formatDistance(sum.distanceM) : "—"}</b></div>
+            <div className="kpi"><small>Time</small><b>{formatDuration(sum.durationS)}</b></div>
+            <div className="kpi">
+              <small>{sport === "bike" ? "Avg speed" : "Avg pace"} / power</small>
+              <b>{sum.pace ?? "—"}</b>
+              <em>{sum.pace ? "" : ["run", "bike", "swim"].includes(sport) ? "" : "pick a sport"}</em>
+            </div>
+            <div className="kpi"><small>TSS</small><b>{sum.load || "—"}</b></div>
+          </div>
+          <p className="muted small">{sum.sessions} session{sum.sessions === 1 ? "" : "s"}{searching ? " matching your search" : " this week"}. Power is not imported yet.</p>
+          {shown.length === 0 && <div className="notice">{searching || sport !== "all" ? "No sessions match these filters." : "No sessions recorded this week."}</div>}
+          {shown.map((a) => (
             <ActivityCard key={a.id} a={a} busy={busy === a.id} onSaveNote={saveNote} onSummarize={summarizeActivity} />
           ))}
         </>
