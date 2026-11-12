@@ -53,6 +53,11 @@ export default function BottomNav({ email, onSignOut }: { email?: string | null;
     document.addEventListener("focusin", on); document.addEventListener("focusout", off);
     return () => { document.removeEventListener("focusin", on); document.removeEventListener("focusout", off); };
   }, []);
+  // Page styles read this: while the keyboard is up the bar space is released (composers sit at the bottom) and floating buttons hide.
+  useEffect(() => {
+    document.documentElement.classList.toggle("kb-open", typing);
+    return () => document.documentElement.classList.remove("kb-open");
+  }, [typing]);
 
   return (
     <>

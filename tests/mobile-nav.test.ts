@@ -89,7 +89,7 @@ test("CSS: safe areas, content clearance, floating elements, focus, reduced moti
   assert.match(mobileBlock, /--bnav-h:calc\(60px \+ env\(safe-area-inset-bottom\)\)/);
   assert.match(mobileBlock, /\.bnav\{[^}]*padding:0 env\(safe-area-inset-right\) env\(safe-area-inset-bottom\) env\(safe-area-inset-left\)/);
   assert.match(mobileBlock, /\.main\{padding-bottom:calc\(var\(--bnav-h\) \+ 96px\)\}/, "page content is never hidden behind the bar");
-  assert.match(mobileBlock, /\.restbar\{bottom:var\(--bnav-h\)/); assert.match(mobileBlock, /\.fab\{bottom:calc\(var\(--bnav-h\) \+ 24px\)\}/); assert.match(mobileBlock, /\.td-quickbtn\{bottom:calc\(var\(--bnav-h\) \+ 18px\)\}/);
+  assert.match(mobileBlock, /\.restbar\{bottom:var\(--bnav-h\)/); assert.match(mobileBlock, /\.fab\{bottom:calc\(var\(--bnav-h\) \+ 84px\)\}/); assert.match(mobileBlock, /\.td-quickbtn\{bottom:calc\(var\(--bnav-h\) \+ 18px\)\}/);
   // sheets and drawers (z-index 50) stay above the bar (z-index 35)
   assert.match(css, /\.sheet-bg\{position:fixed;inset:0;z-index:50/); assert.match(mobileBlock, /\.bnav\{[^}]*z-index:35/);
   assert.match(mobileBlock, /\.bnav-item:focus-visible,\.bnav-row:focus-visible\{outline:2px solid var\(--cyan\)/);

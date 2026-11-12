@@ -17,6 +17,7 @@ import type { AssessmentRow } from "@/lib/coach/client";
 import { BiomarkersCard, EnduranceCard, RaceCard, StrengthCard, SupplementsCard, WellnessCard } from "@/components/today/Modules";
 import FiveDay from "@/components/today/FiveDay";
 import { loadPlannedRange } from "@/lib/calendar/load";
+import { OMNI_RUN_EVENT, quickFromSearch, type OmniRunDetail } from "@/lib/omni";
 import type { PlannedWorkout } from "@/lib/calendar/model";
 import CoachInsight from "@/components/today/CoachInsight";
 import QuickLog, { type QuickTab } from "@/components/today/QuickLog";
@@ -87,6 +88,18 @@ export default function TodayPage() {
   const name = profile?.display_name;
   const lines = w ? overview({ w, e, st, sup, race, today }) : [];
   const openQuick = (tab: QuickTab) => setQuick({ open: true, tab });
+  // The global Quick actions button (components/omni) opens this same Quick log drawer: by event when Today is already open, or through
+  // ?quick=wellness|supplements when arriving from another page (read once, then removed from the address).
+  useEffect(() => {
+    const q = quickFromSearch(window.location.search);
+    if (q) { setQuick({ open: true, tab: q }); window.history.replaceState(null, "", window.location.pathname); }
+    const run = (e: Event) => {
+      const id = (e as CustomEvent<OmniRunDetail>).detail?.id;
+      if (id === "log-wellness") setQuick({ open: true, tab: "wellness" }); else if (id === "log-supplements") setQuick({ open: true, tab: "supplements" });
+    };
+    window.addEventListener(OMNI_RUN_EVENT, run);
+    return () => window.removeEventListener(OMNI_RUN_EVENT, run);
+  }, []);
   const view = trend.slice(-trendRange);
   const hasLoad = trend.some((p) => p.load > 0);
 
@@ -98,7 +111,6 @@ export default function TodayPage() {
           <h1 className="td-hello">{greeting(hourIn(now, tz))}{name ? `, ${name}` : ""}.</h1>
           {lines.length > 0 ? <ul className="td-overview">{lines.map((l) => <li key={l}>{l}</li>)}</ul> : <p className="td-meta">{daily ? "" : "Loading your day…"}</p>}
         </div>
-        <button type="button" className="btn td-quickbtn" onClick={() => openQuick("wellness")}>+ Quick log</button>
       </header>
 
       <div className="td-bento">

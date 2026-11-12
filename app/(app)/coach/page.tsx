@@ -9,6 +9,8 @@ import { countdown, nextUpcomingRace, type Race } from "@/lib/races";
 import { deleteAssessment, listAssessments, type AssessmentRow } from "@/lib/coach/client";
 import type { DailyResult, SessionResult } from "@/lib/coach/engine";
 import ConsentPanel, { authorizedOf, useConsent } from "@/components/coach/consent";
+import { COACH_CATEGORIES } from "@/lib/coach/consentStore";
+import { OMNI_RUN_EVENT, coachTabFromSearch, type OmniRunDetail } from "@/lib/omni";
 import ChatPanel from "@/components/coach/ChatPanel";
 import SessionEvaluator from "@/components/coach/SessionEvaluator";
 import { DailyCard, SessionCard } from "@/components/coach/AssessmentCards";
@@ -40,6 +42,20 @@ export default function CoachPage() {
   const [dailyResult, setDailyResult] = useState<DailyResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ctxOpen, setCtxOpen] = useState(false);   // phone: the context sections are one compact header until tapped (desktop always shows them)
+
+  // The global Quick actions button opens a Coach tab: by event when Coach is already open, or through ?tab=... when arriving from another
+  // page (read once, then removed from the address).
+  useEffect(() => {
+    const t = coachTabFromSearch(window.location.search);
+    if (t) { setTab(t); window.history.replaceState(null, "", window.location.pathname); }
+    const run = (e: Event) => {
+      const id = (e as CustomEvent<OmniRunDetail>).detail?.id;
+      if (id === "ask-coach") setTab("ask"); else if (id === "evaluate-session") setTab("session");
+    };
+    window.addEventListener(OMNI_RUN_EVENT, run);
+    return () => window.removeEventListener(OMNI_RUN_EVENT, run);
+  }, []);
 
   const refreshAssessments = useCallback(async () => { try { setAssessments(await listAssessments(getSupabase())); } catch { /* optional until migration 12 is applied */ } }, []);
   useEffect(() => {
@@ -79,13 +95,21 @@ export default function CoachPage() {
   else if (profile && baselineCount === 0) missing.push("No physiological baselines saved in your profile.");
   if (profile && !profile.migrated) missing.push("Some profile fields are not available yet (not set up on your account).");
 
+  const chatTab = tab === "ask" || tab === "plan";
   return (
-    <>
+    <div className={chatTab ? "coachpage chatmode" : "coachpage"}>
       <div className="eyebrow">Performance</div>
       <h1>APEX Coach</h1>
       <p className="muted" style={{ marginTop: -6 }}>{hello}. Evidence-conscious guidance from your own data. It suggests, you decide.</p>
       {error && <div className="notice error" role="alert">{error}</div>}
 
+      <div className={ctxOpen ? "coachctx open" : "coachctx"}>
+        <button type="button" className="coachctx-head" aria-expanded={ctxOpen} aria-controls="coach-context" onClick={() => setCtxOpen((v) => !v)}>
+          <span className="coachctx-title">{consentReady ? `Coach Context · ${authorized.length}/${COACH_CATEGORIES.length} active` : "Coach Context · loading"}</span>
+          {missing.length > 0 && <span className="coachctx-miss">{missing.length} missing</span>}
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6" /></svg>
+        </button>
+        <div id="coach-context" className="coachctx-body">
       {consentReady ? <ConsentPanel consent={consent} onChange={setConsent} /> : <section className="card consent"><p className="muted small" style={{ margin: 0 }}>Loading your sharing settings…</p></section>}
 
       <section className="card" style={{ marginTop: 14 }}>
@@ -100,9 +124,12 @@ export default function CoachPage() {
         {missing.length > 0 && <div style={{ marginTop: 10 }}><small className="tag measured">Missing</small><ul className="small muted" style={{ margin: "4px 0 0", paddingLeft: 18 }}>{missing.map((m) => <li key={m}>{m}</li>)}</ul></div>}
       </section>
 
+        </div>
+      </div>
+
       <div className="captiles">
         {TABS.map((t) => (
-          <button key={t.id} type="button" className={tab === t.id ? "captile on" : "captile"} aria-pressed={tab === t.id} onClick={() => setTab(t.id)}>
+          <button key={t.id} type="button" className={tab === t.id ? "captile on" : "captile"} aria-pressed={tab === t.id} title={t.text} onClick={() => setTab(t.id)}>
             <b>{t.title}</b><span className="muted small">{t.text}</span>
           </button>
         ))}
@@ -150,6 +177,6 @@ export default function CoachPage() {
           ))}
         </div>
       )}
-    </>
+    </div>
   );
 }

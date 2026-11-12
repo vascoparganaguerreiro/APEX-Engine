@@ -6,6 +6,7 @@ import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
 import { DESKTOP_NAV, isActive } from "@/lib/nav";
 import BottomNav from "@/components/nav/BottomNav";
+import OmniActionHost, { OmniSidebarButton } from "@/components/omni/OmniAction";
 
 const signOut = () => getSupabase().auth.signOut({ scope: "local" });
 
@@ -29,6 +30,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <aside className="side">
         <div className="logo">⚡ APEX ENGINE</div>
         <div className="muted small email">{session.user.email}</div>
+        <OmniSidebarButton />
         <nav>
           {DESKTOP_NAV.map((n) => (
             <Link key={n.href} href={n.href} className={isActive(path, n.href) ? "navitem on" : "navitem"}>{n.label}</Link>
@@ -39,6 +41,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
       <main className="main">{children}</main>
       <BottomNav email={session.user.email} onSignOut={signOut} />
+      <OmniActionHost />
     </div>
   );
 }

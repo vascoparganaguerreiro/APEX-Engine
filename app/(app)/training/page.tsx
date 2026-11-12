@@ -4,6 +4,7 @@ import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
 import { friendlyMessage } from "@/lib/userError";
+import { OMNI_RUN_EVENT, addFromSearch, type OmniRunDetail } from "@/lib/omni";
 import { dayIn, userZone } from "@/lib/today/model";
 import { loadProfileLite, loadRaces, type ProfileLite, type Section } from "@/lib/today/load";
 import type { Race } from "@/lib/races";
@@ -45,6 +46,15 @@ export default function TrainingPage() {
   // always loaded for the range shown NOW (rangeRef), never for the range a callback happened to be created with.
   const rangeRef = useRef(range);
   useEffect(() => { rangeRef.current = range; }, [range]);
+  // The global Quick actions button opens the same add form: by event when this page is open, or through ?add=1 / ?add=YYYY-MM-DD when
+  // arriving from another page (read once, then removed from the address). It only opens the form: nothing is saved without the user.
+  useEffect(() => {
+    const a = addFromSearch(window.location.search);
+    if (a) { setForm({ date: a === "today" ? today : a }); window.history.replaceState(null, "", window.location.pathname); }
+    const run = (e: Event) => { if ((e as CustomEvent<OmniRunDetail>).detail?.id === "plan-session") { setError(null); setForm({ date: today }); } };
+    window.addEventListener(OMNI_RUN_EVENT, run);
+    return () => window.removeEventListener(OMNI_RUN_EVENT, run);
+  }, [today]);
   const planGate = useRef(latestGate());
   const loadPlanned = useCallback(() => {
     const r = rangeRef.current, t = planGate.current.ticket();
