@@ -9,6 +9,7 @@ import { addDays, tsbState, type TrendPoint } from "../engine.ts";
 import { addDaysIso, localDay, weekStart } from "../activities.ts";
 import { activeOn, dueOn, rangeStatus, type Intake, type Schedule, type Supplement } from "../health/core.ts";
 import { countdown, daysUntil, isUpcoming, type Race } from "../races.ts";
+import { detailOf, type PlannedLite } from "../calendar/model.ts";
 
 // ------------------------------------------------------------------ time
 export function validZone(tz: unknown): tz is string {
@@ -275,16 +276,17 @@ export function supplementSummary(sups: Supplement[], schedules: Schedule[], int
 }
 
 // ------------------------------------------------------------------ five days
-export type DayItemKind = "race" | "activity" | "strength" | "workout_active" | "supplements";
-export interface DayItem { kind: DayItemKind; title: string; detail: string; status: "planned" | "done" | "in_progress"; href: string }
+export type DayItemKind = "race" | "activity" | "strength" | "workout_active" | "supplements" | "planned";
+export interface DayItem { kind: DayItemKind; title: string; detail: string; status: "planned" | "done" | "in_progress" | "skipped"; href: string }
 export interface DayCol { day: string; label: string; items: DayItem[] }
 
 /** Today and the next four days. Only real records appear: races on their date; activities and strength sessions already done today;
- *  a workout in progress; supplement doses scheduled for that day (with today's completion). APEX has no training calendar, so there
- *  are no invented planned sessions. */
+ *  a workout in progress; supplement doses scheduled for that day (with today's completion); and, when migration 15 is applied, the
+ *  workouts the user planned in the Training calendar. Planned items only come from planned_workouts (written by the user): none is
+ *  invented and no load is derived from them. A plan already linked to a recorded session is not repeated: the real record shows. */
 export function fiveDays(a: {
   today: string; tz: string; races: Race[]; acts: ActLite[]; strength: StrengthLite[]; activeWorkout: { title: string; startedAt: string } | null;
-  sups: Supplement[]; schedules: Schedule[]; supToday: SupplementSummary | null;
+  sups: Supplement[]; schedules: Schedule[]; supToday: SupplementSummary | null; planned?: Array<PlannedLite & { linked?: boolean }>;
 }): DayCol[] {
   return Array.from({ length: 5 }, (_, i) => {
     const day = addDaysIso(a.today, i), items: DayItem[] = [];
@@ -292,6 +294,10 @@ export function fiveDays(a: {
     // not shown as upcoming; each race appears once, on its own date.
     for (const r of a.races.filter((x) => x.race_date === day && isUpcoming(x, a.today))) {
       items.push({ kind: "race", title: r.name, detail: `${r.priority === "A" ? "Goal race" : `Priority ${r.priority}`}${r.location ? ` · ${r.location}` : ""}`, status: "planned", href: `/races/${r.id}` });
+    }
+    for (const p of (a.planned ?? []).filter((x) => x.planned_date === day && !x.linked)) {
+      items.push({ kind: "planned", title: p.title, detail: detailOf({ kind: p.kind, sport: p.sport, duration_min: p.duration_min, distance_m: null, intensity: null }),
+        status: p.status === "completed" ? "done" : p.status === "skipped" ? "skipped" : "planned", href: "/training" });
     }
     if (i === 0) {
       for (const x of a.acts.filter((x) => localDay(x.started_at, a.tz) === day)) {

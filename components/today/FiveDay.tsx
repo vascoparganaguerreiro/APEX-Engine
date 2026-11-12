@@ -2,15 +2,15 @@
 import Link from "next/link";
 import { shortDate, type DayCol } from "@/lib/today/model";
 
-const ICON: Record<string, string> = { race: "🏁", activity: "●", strength: "▲", workout_active: "▶", supplements: "◆" };
-const STATUS: Record<string, string> = { planned: "Planned", done: "Done", in_progress: "In progress" };
+const ICON: Record<string, string> = { race: "🏁", activity: "●", strength: "▲", workout_active: "▶", supplements: "◆", planned: "○" };
+const STATUS: Record<string, string> = { planned: "Planned", done: "Done", in_progress: "In progress", skipped: "Skipped" };
 
 /** Today + four days. Only real records; an empty day stays quietly empty. */
 export default function FiveDay({ days }: { days: DayCol[] }) {
   const any = days.some((d) => d.items.length);
   return (
     <section className="td-five" aria-label="Next five days">
-      <div className="td-section-head"><h2>Next five days</h2><span className="td-meta">races, sessions done today and scheduled supplement doses</span></div>
+      <div className="td-section-head"><h2>Next five days</h2><span className="td-meta">races, planned workouts, sessions done today and scheduled supplement doses</span></div>
       <div className="td-days">
         {days.map((d) => (
           <div key={d.day} className={`td-day${d.label === "Today" ? " now" : ""}`}>
@@ -24,7 +24,7 @@ export default function FiveDay({ days }: { days: DayCol[] }) {
           </div>
         ))}
       </div>
-      <p className="td-meta" style={{ marginTop: 8 }}>{any ? "" : "Nothing scheduled in the next five days. "}APEX has no training calendar yet, so planned workouts are not shown here; races and supplement schedules are.</p>
+      <p className="td-meta" style={{ marginTop: 8 }}>{any ? "" : "Nothing scheduled in the next five days. "}Planned workouts are the ones you add in <Link href="/training" className="td-link">Training</Link>; nothing is planned for you.</p>
     </section>
   );
 }

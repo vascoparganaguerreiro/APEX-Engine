@@ -16,6 +16,8 @@ import type { Intake, Schedule, Supplement } from "@/lib/health/core";
 import type { AssessmentRow } from "@/lib/coach/client";
 import { BiomarkersCard, EnduranceCard, RaceCard, StrengthCard, SupplementsCard, WellnessCard } from "@/components/today/Modules";
 import FiveDay from "@/components/today/FiveDay";
+import { loadPlannedRange } from "@/lib/calendar/load";
+import type { PlannedWorkout } from "@/lib/calendar/model";
 import CoachInsight from "@/components/today/CoachInsight";
 import QuickLog, { type QuickTab } from "@/components/today/QuickLog";
 import TrendChart from "@/components/TrendChart";
@@ -37,6 +39,7 @@ export default function TodayPage() {
   const [bio, setBio] = useState<Section<{ panel: PanelLite | null; results: ResultLite[] }> | null>(null);
   const [sups, setSups] = useState<Section<Sups> | null>(null);
   const [races, setRaces] = useState<Section<Race[]> | null>(null);
+  const [planned, setPlanned] = useState<Section<PlannedWorkout[]> | null>(null);
   const [coach, setCoach] = useState<Section<AssessmentRow | null> | null>(null);
   const [active, setActive] = useState<{ title: string; startedAt: string } | null>(null);
   const [whoop, setWhoop] = useState<{ value: number; day: string | null } | null>(null);
@@ -52,6 +55,7 @@ export default function TodayPage() {
     void loadBiomarkers().then(setBio);
     void loadSupplements(day).then(setSups);
     void loadRaces().then(setRaces);
+    void loadPlannedRange(day, addDays(day, 4)).then(setPlanned);   // migration 15; "unavailable" simply leaves the strip as it was
     void loadLatestDaily().then(setCoach);
     void loadActiveWorkout().then(setActive);
     void loadWhoopRecovery().then(setWhoop);
@@ -77,7 +81,8 @@ export default function TodayPage() {
   const days = useMemo(() => fiveDays({
     today, tz, races: races?.status === "ok" ? races.data : [], acts: acts?.status === "ok" ? acts.data : [], strength: strength?.status === "ok" ? strength.data : [],
     activeWorkout: active, sups: sups?.status === "ok" ? sups.data.sups : [], schedules: sups?.status === "ok" ? sups.data.schedules : [], supToday: sup,
-  }), [today, tz, races, acts, strength, active, sups, sup]);
+    planned: planned?.status === "ok" ? planned.data.map((p) => ({ ...p, linked: p.completed_activity_id !== null || p.completed_strength_session_id !== null })) : [],
+  }), [today, tz, races, acts, strength, active, sups, sup, planned]);
 
   const name = profile?.display_name;
   const lines = w ? overview({ w, e, st, sup, race, today }) : [];

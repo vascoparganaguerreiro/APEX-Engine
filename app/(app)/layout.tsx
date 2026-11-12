@@ -5,12 +5,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
 
-const NAV = [
+const NAV: Array<{ href: string; label: string; soon?: boolean }> = [
   { href: "/today", label: "Today" },
   { href: "/activities", label: "Activities" },
   { href: "/strength", label: "Strength" },
   { href: "/integrations", label: "Connections" },
-  { href: "/training", label: "Training", soon: true },
+  { href: "/training", label: "Training" },
   { href: "/coach", label: "Coach" },
   { href: "/supplements", label: "Supplements" },
   { href: "/biomarkers", label: "Biomarkers" },
