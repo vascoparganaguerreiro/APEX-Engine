@@ -38,11 +38,12 @@ export default function StrengthPage() {
 
   useEffect(() => {
     if (!session) return;
-    getEngine().then(({ engine }) => {
+    getEngine().then(async ({ engine }) => {
       engineRef.current = engine;
+      await engine.prune().catch(() => undefined);              // forget local copies of finished workouts that are fully uploaded
       const local = engine.local;
       setW(local.activeId ? local.workouts[local.activeId] ?? null : null);
-      setUnsynced(Object.values(local.workouts).filter((x) => x.status === "completed"));
+      setUnsynced(engine.pendingWorkouts().filter((x) => x.status === "completed"));
       setReady(true);
     }).catch((e) => { setError(errText(e)); setReady(true); });
     setRest(loadRest());
@@ -122,7 +123,7 @@ export default function StrengthPage() {
           <div className="row">
             {w.pausedAt ? <button className="btn ghost tiny" onClick={() => save(resume(w, new Date().toISOString()))}>▶ Resume</button> : <button className="btn ghost tiny" onClick={() => save(pause(w, new Date().toISOString()))}>❚❚ Pause</button>}
             <button className="btn tiny" onClick={() => setFinishing(true)}>Finish</button>
-            <button className="btn ghost tiny" onClick={cancel}>Cancel</button>
+            <button className="btn ghost tiny" style={{ marginLeft: "auto" }} onClick={cancel}>Cancel workout</button>
             {typeof Notification !== "undefined" && Notification.permission === "default" && <button className="linkbtn" onClick={() => void Notification.requestPermission()}>Enable rest alerts</button>}
           </div>
         </div>

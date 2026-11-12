@@ -23,7 +23,8 @@ export function interval(s: Source): { start: number; end: number | null } {
   if (s.kind === "activity") { const d = s.elapsedS ?? s.durationS; return { start, end: d && d > 0 ? start + d * 1000 : null }; }
   return { start, end: s.endedAt ? Date.parse(s.endedAt) : null };
 }
-const originLabel = (o: string | null) => { const v = (o ?? "").toUpperCase(); return v.includes("GARMIN") ? "Garmin" : v.includes("STRAVA") ? "Strava" : v ? v.toLowerCase() : "Intervals.icu"; };
+const BRAND: Array<[string, string]> = [["GARMIN", "Garmin"], ["STRAVA", "Strava"], ["COROS", "COROS"], ["POLAR", "Polar"], ["SUUNTO", "Suunto"], ["ZEPP", "Amazfit/Zepp"], ["WHOOP", "WHOOP"], ["WAHOO", "Wahoo"], ["HUAWEI", "Huawei"]];
+const originLabel = (o: string | null) => { const v = (o ?? "").toUpperCase(); return BRAND.find(([k]) => v.includes(k))?.[1] ?? (v ? v.toLowerCase() : "Intervals.icu"); };
 export function sourceLabel(s: Source): string { return s.kind === "strength" ? (s.source === "hevy_csv" ? "Hevy import" : "APEX log") : `${originLabel(s.origin)} activity`; }
 
 /** Can these two records be the same session? strength activities match strength logs; a generic "other" activity only weakly. */

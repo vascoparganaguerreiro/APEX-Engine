@@ -124,8 +124,8 @@ function fakeSupabase() {
   const asUser = (uid: string): Db => ({
     from() {
       let op = "select"; let payload: Record<string, unknown> = {}; let limit: number | null = null;
-      const filters: Array<[string, unknown]> = []; let gte: [string, string] | null = null; let failSelect = false;
-      const visible = () => rows.filter((r) => r.user_id === uid && filters.every(([c, v]) => r[c] === v) && (!gte || String(r[gte[0]]) >= gte[1]));
+      const filters: Array<[string, unknown]> = []; let gte: [string, string] | null = null; let failSelect = false; const ins: Array<[string, unknown[]]> = [];
+      const visible = () => rows.filter((r) => r.user_id === uid && filters.every(([c, v]) => r[c] === v) && ins.every(([c, vs]) => vs.includes(r[c])) && (!gte || String(r[gte[0]]) >= gte[1]));
       const run = async (): Promise<{ data: unknown; error: { message: string } | null }> => {
         if (failSelect) return { data: null, error: { message: "column does not exist" } };
         if (op === "insert") {
@@ -145,7 +145,7 @@ function fakeSupabase() {
         update(p: Record<string, unknown>) { op = "update"; payload = p; sent.push({ op, payload }); return b; },
         delete() { op = "delete"; return b; },
         eq(c: string, v: unknown) { filters.push([c, v]); return b; },
-        gte(c: string, v: string) { gte = [c, v]; return b; }, order() { return b; }, limit(n: number) { limit = n; return b; },
+        gte(c: string, v: string) { gte = [c, v]; return b; }, in(c: string, vs: unknown[]) { ins.push([c, vs]); return b; }, order() { return b; }, limit(n: number) { limit = n; return b; },
         single() { return run().then((r) => ({ data: Array.isArray(r.data) ? r.data[0] : r.data, error: r.error })); },
         maybeSingle() { return run().then((r) => ({ data: Array.isArray(r.data) ? (r.data[0] ?? null) : r.data, error: r.error })); },
         then(res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) { return run().then(res, rej); },
@@ -202,7 +202,9 @@ test("the Today race card is a bonus: the next upcoming race is found, and failu
   await createRace(db, "alice", input({ name: "Past", race_date: "2026-10-01" }));
   assert.equal((await nextUpcomingRace(db, TODAY))?.name, "Sooner");
   assert.equal(await nextUpcomingRace(asUser("nobody"), TODAY), null);
-  const broken: Db = { from: () => ({ select: () => ({ gte: () => ({ order: () => ({ limit: async () => ({ data: null, error: { message: "boom" } }) }) }) }) }) };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const q: any = { select: () => q, gte: () => q, in: () => q, order: () => q, limit: async () => ({ data: null, error: { message: "boom" } }) };
+  const broken: Db = { from: () => q };
   assert.equal(await nextUpcomingRace(broken, TODAY), null, "a failing query just means no card");
 });
 
@@ -226,9 +228,11 @@ test("navigation, Today integration and in-place editing", () => {
   const layout = read("app/(app)/layout.tsx");
   assert.match(layout, /\{ href: "\/races", label: "Races" \}/);
   assert.ok(!/href: "\/races", label: "Races", soon/.test(layout));
+  // Today (redesigned): races load on their own and a failure only affects the race card.
   const today = read("app/(app)/today/page.tsx");
-  assert.match(today, /nextUpcomingRace\(getSupabase\(\), todayIso\(\)\)\.then\(setUpcomingRace\)\.catch\(\(\) => setUpcomingRace\(null\)\)/);
-  assert.match(today, /<NextRaceCard race=\{upcomingRace\}/);
+  assert.match(today, /nextRace\(races\.data, today\)/);
+  assert.match(today, /<RaceCard s=\{races \?\? LOADING\}/);
+  assert.match(read("lib/today/load.ts"), /try \{ return \{ status: "ok", data: \(await listRacesCompat\(getSupabase\(\)\)\)\.races \}; \}\s*catch/);
   const page = read("app/(app)/races/page.tsx");
   assert.match(page, /editing\.id === r\.id\) \{\s*return <RaceForm/, "Edit opens in place of the card");
   assert.match(page, /window\.confirm\(`Delete/, "deleting asks for confirmation");

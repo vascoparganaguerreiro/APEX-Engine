@@ -28,14 +28,14 @@ export function useLibrary() {
 }
 
 const HIST_KEY = "apex-strength-history-v1";
-/** The last year of finished workouts, cached on the device so "last time" values still show offline. */
+/** All finished workouts (paged, up to 5000), with the most recent cached on the device so "last time" values still show offline. */
 export function useHistory(custom: readonly Exercise[]) {
   const [sessions, setSessions] = useState<HSession[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [setUp, setSetUp] = useState<boolean | null>(null);
   const reload = useCallback(async () => {
     try {
-      const s = await loadHistory(sdb(), { keys: null, sinceIso: new Date(Date.now() - 400 * 86_400_000).toISOString(), resolve: (k) => resolveExercise(k, custom) });
+      const s = await loadHistory(sdb(), { keys: null, resolve: (k) => resolveExercise(k, custom) });
       setSessions(s); setSetUp(true); setError(null);
       try { localStorage.setItem(HIST_KEY, JSON.stringify(s.slice(0, 120))); } catch { /* quota: cache is optional */ }
     } catch (e) {

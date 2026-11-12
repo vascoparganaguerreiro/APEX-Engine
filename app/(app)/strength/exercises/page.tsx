@@ -87,8 +87,8 @@ export default function ExercisesPage() {
           <p className="muted small">Default rest {sel.rest} s. No demonstration media is bundled yet (only original or properly licensed images will be added).</p>
           <h3 style={{ fontSize: 15 }}>Your history</h3>
           {selHist.length === 0 ? <p className="muted small">Not logged yet.</p> : (
-            <table className="tbl"><thead><tr><th>Date</th><th>Best set</th><th>Working sets</th><th>Est. 1RM</th></tr></thead>
-              <tbody>{selHist.map((h) => <tr key={h.sessionId}><td>{h.date}</td><td>{h.best ? `${h.best.weight} ${h.best.unit} × ${h.best.reps}` : "–"}</td><td>{h.workingSets}</td><td>{h.e1rmKg ? `${Math.round(h.e1rmKg * 10) / 10} kg` : "–"}</td></tr>)}</tbody></table>
+            <div className="tablewrap" style={{ padding: 0 }}><table className="tbl"><thead><tr><th>Date</th><th>Best set</th><th>Working sets</th><th>Est. 1RM</th></tr></thead>
+              <tbody>{selHist.map((h) => <tr key={h.sessionId}><td>{h.date}</td><td>{h.best ? `${h.best.weight} ${h.best.unit} × ${h.best.reps}` : "–"}</td><td>{h.workingSets}</td><td>{h.e1rmKg ? `${Math.round(h.e1rmKg * 10) / 10} kg` : "–"}</td></tr>)}</tbody></table></div>
           )}
           {selHist.length > 0 && <p className="muted small">{E1RM_FORMULA}</p>}
           {sel.custom && <button className="btn ghost tiny" onClick={() => void archive(sel)}>Remove from my library</button>}

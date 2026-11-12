@@ -14,7 +14,7 @@
 
 create extension if not exists pgcrypto;
 
-create or replace function public.strength_touch_updated_at() returns trigger language plpgsql as $$
+create or replace function public.strength_touch_updated_at() returns trigger language plpgsql set search_path = public as $$
 begin new.updated_at = now(); return new; end $$;
 
 -- ================================================================== custom exercises
@@ -224,6 +224,16 @@ create table if not exists public.training_merge_decisions (
   reverted_at         timestamptz
 );
 create unique index if not exists training_merge_decisions_open_uq on public.training_merge_decisions (user_id, pair_key) where reverted_at is null;
+
+-- ================================================================== supporting indexes
+-- Foreign keys with ON DELETE SET NULL / RESTRICT need an index on the referencing column, otherwise deleting a routine, a custom
+-- exercise or a canonical session scans the whole child table. user_id indexes keep the owner-only RLS filters cheap.
+create index if not exists strength_sessions_routine_idx on public.strength_sessions (routine_id) where routine_id is not null;
+create index if not exists strength_routine_exercises_custom_idx on public.strength_routine_exercises (custom_exercise_id) where custom_exercise_id is not null;
+create index if not exists strength_session_exercises_custom_idx on public.strength_session_exercises (custom_exercise_id) where custom_exercise_id is not null;
+create index if not exists strength_routine_exercises_user_idx on public.strength_routine_exercises (user_id);
+create index if not exists training_session_links_user_idx on public.training_session_links (user_id);
+create index if not exists training_merge_decisions_session_idx on public.training_merge_decisions (training_session_id) where training_session_id is not null;
 
 -- ================================================================== wearable device settings and activity provenance
 create table if not exists public.wearable_devices (
@@ -455,7 +465,9 @@ begin
       on conflict (user_id, source, source_ref) where source_ref is not null do nothing
       returning id into sid;
       if sid is null then skipped := skipped + 1; continue; end if;
+      if jsonb_array_length(coalesce(s->'exercises', '[]'::jsonb)) > 60 then raise exception 'too many exercises in one workout'; end if;
       for ex in select * from jsonb_array_elements(coalesce(s->'exercises', '[]'::jsonb)) loop
+        if jsonb_array_length(coalesce(ex->'sets', '[]'::jsonb)) > 50 then raise exception 'too many sets in one exercise'; end if;
         eid := gen_random_uuid();
         insert into public.strength_session_exercises (id, session_id, user_id, position, exercise_key, custom_exercise_id, exercise_name, superset_group, load_mode, weight_unit, notes, rev)
         values (eid, sid, uid, (ex->>'position')::smallint, nullif(ex->>'exercise_key', ''), nullif(ex->>'custom_exercise_id', '')::uuid, btrim(ex->>'exercise_name'),

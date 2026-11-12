@@ -190,8 +190,10 @@ export function parseHevy(text: string, tz: string): Parsed {
 }
 
 // ------------------------------------------------------------------ preview with duplicate detection
-export interface ExistingSession { id: string; source: string; sourceRef: string | null; startedAt: string; endedAt: string | null; title: string }
-export interface PreviewWorkout extends ImportWorkout { status: "new" | "already_imported" | "overlaps_apex"; overlapWith: string | null; include: boolean }
+export interface ExistingSession { id: string; source: string; sourceRef: string | null; startedAt: string; endedAt: string | null; title: string; deleted?: boolean }
+/** already_imported: the same workout is in APEX. deleted_before: it was imported and later deleted by the user; the database keeps
+ *  its fingerprint, so it is not imported again (deleting an import is respected). */
+export interface PreviewWorkout extends ImportWorkout { status: "new" | "already_imported" | "deleted_before" | "overlaps_apex"; overlapWith: string | null; include: boolean }
 export interface Preview {
   workouts: PreviewWorkout[]; names: ExerciseMatch[]; from: string | null; to: string | null; sets: number;
   counts: { new: number; already: number; overlaps: number }; weightUnit: WeightUnit | null; missing: string[];
@@ -199,10 +201,10 @@ export interface Preview {
 const overlapRatio = (a0: number, a1: number, b0: number, b1: number) => { const o = Math.min(a1, b1) - Math.max(a0, b0); const d = Math.min(a1 - a0, b1 - b0); return o <= 0 ? 0 : d <= 0 ? 1 : o / d; };
 
 export function buildPreview(p: Parsed, existing: ExistingSession[], library: readonly Exercise[]): Preview {
-  const refs = new Set(existing.filter((e) => e.source === "hevy_csv" && e.sourceRef).map((e) => e.sourceRef as string));
-  const apex = existing.filter((e) => e.source === "apex");
+  const refs = new Map(existing.filter((e) => e.source === "hevy_csv" && e.sourceRef).map((e) => [e.sourceRef as string, Boolean(e.deleted)]));
+  const apex = existing.filter((e) => e.source === "apex" && !e.deleted);
   const workouts: PreviewWorkout[] = p.workouts.map((w) => {
-    if (refs.has(w.ref)) return { ...w, status: "already_imported", overlapWith: null, include: false };
+    if (refs.has(w.ref)) return { ...w, status: refs.get(w.ref) ? "deleted_before" : "already_imported", overlapWith: null, include: false };
     const s0 = Date.parse(w.startedAt), s1 = w.endedAt ? Date.parse(w.endedAt) : s0 + 60 * 60_000;
     const hit = apex.find((a) => { const a0 = Date.parse(a.startedAt), a1 = a.endedAt ? Date.parse(a.endedAt) : a0 + 60 * 60_000; return overlapRatio(s0, s1, a0, a1) >= 0.5; });
     return hit ? { ...w, status: "overlaps_apex", overlapWith: hit.title, include: false } : { ...w, status: "new", overlapWith: null, include: true };
@@ -215,7 +217,7 @@ export function buildPreview(p: Parsed, existing: ExistingSession[], library: re
   return {
     workouts, names, from: p.workouts[0]?.startedAt ?? null, to: p.workouts[p.workouts.length - 1]?.startedAt ?? null,
     sets: p.workouts.reduce((n, w) => n + w.exercises.reduce((m, e) => m + e.sets.length, 0), 0),
-    counts: { new: workouts.filter((w) => w.status === "new").length, already: workouts.filter((w) => w.status === "already_imported").length, overlaps: workouts.filter((w) => w.status === "overlaps_apex").length },
+    counts: { new: workouts.filter((w) => w.status === "new").length, already: workouts.filter((w) => w.status === "already_imported" || w.status === "deleted_before").length, overlaps: workouts.filter((w) => w.status === "overlaps_apex").length },
     weightUnit: p.format.weightUnit, missing,
   };
 }
@@ -227,7 +229,7 @@ export interface ImportOptions { dumbbellWeights: "per_hand" | "combined" }
 /** Build the RPC payload for the confirmed workouts, in chunks the database function accepts. */
 export function buildPayload(pv: Preview, map: NameMap, library: readonly Exercise[], o: ImportOptions, chunk = 50): Array<Array<Record<string, unknown>>> {
   const byKey = new Map(library.map((e) => [e.key, e]));
-  const sessions = pv.workouts.filter((w) => w.include && w.status !== "already_imported").map((w) => ({
+  const sessions = pv.workouts.filter((w) => w.include && w.status !== "already_imported" && w.status !== "deleted_before").map((w) => ({
     source_ref: w.ref, title: w.title, started_at: w.startedAt, ended_at: w.endedAt, notes: w.notes,
     exercises: w.exercises.filter((e) => e.sets.length).map((e, i) => {
       const key = map[e.name] ?? null, ex = key ? byKey.get(key) ?? null : null;

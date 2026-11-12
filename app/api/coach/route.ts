@@ -3,8 +3,9 @@ import { adminClient } from "@/lib/serverConnections";
 import { CoachError, runCoach } from "@/lib/coach/engine";
 import { validateRequest } from "@/lib/coach/schema";
 import { createStore } from "@/lib/coach/store";
-import { GeminiError, generateJson } from "@/lib/coach/gemini";
+import { COACH_BUDGET_MS, GeminiError, generateJson } from "@/lib/coach/gemini";
 import { COACH_DAILY_DEFAULT, COACH_HOURLY_DEFAULT, QuotaUnavailable, limitFrom } from "@/lib/coach/quota";
+import { ConsentOwnerMismatch, assertConsentOwner } from "@/lib/consentOwner";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -20,11 +21,14 @@ function localToday(v: unknown): string {
   return Number.isFinite(diff) && diff <= 1 ? v : server;
 }
 
-/** POST /api/coach  { intent: "chat" | "plan" | "session" | "daily", ... } + header X-Coach-Consent: yes (when any data category is selected).
+/** POST /api/coach  { intent: "chat" | "plan" | "session" | "daily", ... } + header X-Coach-Consent: yes (when any data category is selected)
+ *  + header X-Consent-User: the account the consent was loaded for (must be the verified user; an account check, not consent).
  *  The user id comes only from the verified session. Conversation history is read from the database, never trusted from the browser. */
 export async function POST(req: Request): Promise<Response> {
+  const startedAt = Date.now();                                    // one time budget for the whole request (Gemini calls finish before the 60 s route limit)
   try {
     const { sb, uid } = await authUser(req);
+    assertConsentOwner(req.headers, uid);       // consent loaded for another account (switched in another tab): 403 before any data or AI
     if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY) return Response.json({ error: "That request is too large." }, { status: 413 });
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
     const today = localToday(body?.today);
@@ -35,10 +39,11 @@ export async function POST(req: Request): Promise<Response> {
     const store = createStore(sb, adminClient(), uid, { hour, day: Math.max(day, hour) });
     const result = await runCoach({
       today, ...store,
-      generate: (system, user) => generateJson({ apiKey: process.env.GEMINI_API_KEY, modelOverride: process.env.GEMINI_MODEL }, { system, user }),
+      generate: (system, user) => generateJson({ apiKey: process.env.GEMINI_API_KEY, modelOverride: process.env.GEMINI_MODEL, deadline: startedAt + COACH_BUDGET_MS }, { system, user }),
     }, v.req, req.headers.get("x-coach-consent") === "yes");
     return Response.json(result);
   } catch (e) {
+    if (e instanceof ConsentOwnerMismatch) return Response.json({ error: e.message }, { status: 403 });
     if (e instanceof CoachError) {
       const retry = typeof e.extra.retryAfterSeconds === "number" ? Math.max(1, Math.ceil(e.extra.retryAfterSeconds)) : null;
       return Response.json({ error: e.message, ...e.extra }, { status: e.status, headers: retry ? { "Retry-After": String(retry) } : undefined });
@@ -48,7 +53,8 @@ export async function POST(req: Request): Promise<Response> {
       return Response.json({ error: "The Coach is temporarily unavailable. Please try again in a moment." }, { status: 503 });
     }
     if (e instanceof GeminiError) {
-      console.error("coach: model error", e.kind);                           // never log prompts, answers or health data
+      // Per-attempt details (model, attempt, elapsed, category, status) were already logged by lib/coach/gemini.ts. Never log prompts, answers or health data.
+      console.error("coach: model error", e.kind, JSON.stringify({ attempts: e.attempts.length, elapsedMs: Date.now() - startedAt }));
       const status = e.kind === "timeout" ? 504 : e.kind === "quota" ? 429 : e.kind === "config" ? 503 : 502;
       return Response.json({ error: e.message }, { status });
     }

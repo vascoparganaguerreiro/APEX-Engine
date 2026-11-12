@@ -177,10 +177,47 @@ export async function deleteRace(db: Db, id: number): Promise<void> {
   if (error) fail(error);
   if (!data || data.length === 0) throw new Error("Race not found.");
 }
-/** The next upcoming race for the Today page. Falls back to the original columns if the Race Hub migration is not applied yet. */
+/** All races for read-only views (Today). Same rows as listRaces, but if the Race Hub columns (migration 10) are missing it reads the
+ *  original columns instead of failing: those races then get the defaults raceFromRow gives (status "planned", sport "other"), exactly
+ *  like nextUpcomingRace. `legacy` tells the caller the extra fields are unavailable. Only throws when even the original table fails. */
+export const BASE_RACE_COLUMNS = "id,name,race_date,race_type,priority,goal,notes";
+/** The columns migration 10 adds (RACE_COLUMNS minus BASE_RACE_COLUMNS). */
+export const RACE_HUB_COLUMNS = RACE_COLUMNS.split(",").filter((c) => !BASE_RACE_COLUMNS.split(",").includes(c));
+/** True ONLY when a query failed because one of the migration-10 columns does not exist. Postgres reports that as 42703
+ *  ("column races.status does not exist"); PostgREST's schema-cache variant is PGRST204 ("Could not find the 'status' column of
+ *  'races' in the schema cache"). Network failures (status 0, no such code), timeouts, permission (42501), JWT/auth (PGRST3xx) and every
+ *  other error return false, as does a missing column that is NOT a Race Hub column. */
+export function isMissingRaceHubColumn(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false;
+  const { code, message } = e as { code?: unknown; message?: unknown };
+  if (code !== "42703" && code !== "PGRST204") return false;
+  const msg = typeof message === "string" ? message : "";
+  return RACE_HUB_COLUMNS.some((c) => new RegExp(`(^|[^a-z0-9_])${c}([^a-z0-9_]|$)`).test(msg));
+}
+export async function listRacesCompat(db: Db): Promise<{ races: Race[]; legacy: boolean }> {
+  const full = await db.from("races").select(RACE_COLUMNS).order("race_date", { ascending: true });
+  if (!full.error) return { races: ((full.data ?? []) as Record<string, unknown>[]).map(raceFromRow), legacy: false };
+  if (!isMissingRaceHubColumn(full.error)) fail(full.error);             // a genuine error is reported, never hidden by the legacy query
+  const base = await db.from("races").select(BASE_RACE_COLUMNS).order("race_date", { ascending: true });
+  if (base.error) fail(base.error);
+  return { races: ((base.data ?? []) as Record<string, unknown>[]).map(raceFromRow), legacy: true };
+}
+/** The next upcoming race (Races page rule: isUpcoming, soonest first, then priority) or null when none qualifies. Throws on a genuine
+ *  error. Before migration 10 it reads the original columns; those races have no status yet and count as planned (raceFromRow). */
+export async function nextUpcomingRaceStrict(db: Db, today: string): Promise<Race | null> {
+  const full = await db.from("races").select(RACE_COLUMNS).gte("race_date", today).in("status", ["planned", "registered"])
+    .order("race_date", { ascending: true }).order("priority", { ascending: true }).limit(20);
+  let rows = full.data;
+  if (full.error) {
+    if (!isMissingRaceHubColumn(full.error)) fail(full.error);
+    const base = await db.from("races").select(BASE_RACE_COLUMNS).gte("race_date", today)
+      .order("race_date", { ascending: true }).order("priority", { ascending: true }).limit(20);
+    if (base.error) fail(base.error);
+    rows = base.data;
+  }
+  return nextRace(((rows ?? []) as Record<string, unknown>[]).map(raceFromRow), today);
+}
+/** The next upcoming race for the Coach page: same rule, but null on any error (unchanged contract). */
 export async function nextUpcomingRace(db: Db, today: string): Promise<Race | null> {
-  let res = await db.from("races").select(RACE_COLUMNS).gte("race_date", today).order("race_date", { ascending: true }).limit(20);
-  if (res.error) res = await db.from("races").select("id,name,race_date,race_type,priority,goal,notes").gte("race_date", today).order("race_date", { ascending: true }).limit(20);
-  if (res.error) return null;
-  return nextRace(((res.data ?? []) as Record<string, unknown>[]).map(raceFromRow), today);
+  try { return await nextUpcomingRaceStrict(db, today); } catch { return null; }
 }

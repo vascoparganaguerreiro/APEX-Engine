@@ -16,7 +16,7 @@ const parsePace = (t: string, sport: CoachSport): number | null => {
 };
 const num = (s: string) => (s.trim() === "" ? null : Number(s.replace(",", ".")));
 
-export default function SessionEvaluator({ authorized, onSaved }: { authorized: Category[]; onSaved: () => void }) {
+export default function SessionEvaluator({ authorized, consentUser, onSaved }: { authorized: Category[]; consentUser: string | null; onSaved: () => void }) {
   const [source, setSource] = useState<"imported" | "manual">("imported");
   const [acts, setActs] = useState<Act[] | null>(null);
   const [activityId, setActivityId] = useState("");
@@ -41,7 +41,7 @@ export default function SessionEvaluator({ authorized, onSaved }: { authorized: 
         ? { intent: "session", activityId: Number(activityId), objective, clarification: clar }
         : { intent: "session", clarification: clar, manual: { sport: m.sport, mode: m.mode, date: m.date, duration_min: num(m.duration), distance_km: num(m.distance), objective, avg_hr: num(m.avg_hr), max_hr: num(m.max_hr), pace_s_per_km: m.pace.trim() ? parsePace(m.pace, m.sport) : null, power_w: num(m.power), rpe: num(m.rpe), structure: m.structure, notes: m.notes } };
       if (source === "manual" && m.pace.trim() && body && (body as { manual: { pace_s_per_km: number | null } }).manual.pace_s_per_km === null) { setError("Pace must look like 4:35."); setBusy(false); return; }
-      const r = await coachRequest(body, authorized);
+      const r = await coachRequest(body, authorized, consentUser);
       if (r.kind !== "session") throw new Error("Unexpected answer from the Coach.");
       setResult(r); if (r.saved) onSaved();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }

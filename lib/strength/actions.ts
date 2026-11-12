@@ -23,6 +23,18 @@ export function snapshotOf(w: Workout, o: { routineName?: string | null; elapsed
   };
 }
 
+/** Keep the request under the Coach route's 64 KB body limit. The current exercise stays complete; other exercises keep their last
+ *  sets, then only their names. Set ids that remain are unchanged, so any proposal still refers to real sets. */
+export function fitSnapshot(s: WorkoutSnapshot, maxBytes = 40_000): WorkoutSnapshot {
+  const size = (x: WorkoutSnapshot) => new TextEncoder().encode(JSON.stringify(x)).length;
+  if (size(s) <= maxBytes) return s;
+  for (const keep of [5, 2, 0]) {
+    const t = { ...s, exercises: s.exercises.map((e) => (e.id === s.currentExerciseId ? e : { ...e, notes: null, sets: e.sets.slice(-keep).slice(0, keep) })) };
+    if (size(t) <= maxBytes) return t;
+  }
+  return { ...s, exercises: s.exercises.filter((e) => e.id === s.currentExerciseId).map((e) => ({ ...e, sets: e.sets.slice(-SNAP_LIMITS.sets) })) };
+}
+
 const clean = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/[\u0000-\u001F\u007F]/g, " ").replace(/<\/?untrusted_user_text>/gi, "").trim().slice(0, max) : "");
 const numOr = (v: unknown, lo: number, hi: number): number | null => (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
 

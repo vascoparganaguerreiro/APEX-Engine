@@ -8,7 +8,7 @@ import { CATEGORY_INFO, type Category } from "@/lib/coach/schema";
 interface Msg { id: string; role: "user" | "assistant"; content: string; meta?: Record<string, unknown>; failed?: boolean }
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export default function ChatPanel({ intent, suggestions, authorized, raceId = null, placeholder }: { intent: "chat" | "plan"; suggestions: string[]; authorized: Category[]; raceId?: number | null; placeholder?: string }) {
+export default function ChatPanel({ intent, suggestions, authorized, consentUser, raceId = null, placeholder }: { intent: "chat" | "plan"; suggestions: string[]; authorized: Category[]; consentUser: string | null; raceId?: number | null; placeholder?: string }) {
   const [convs, setConvs] = useState<ConversationRow[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -38,7 +38,7 @@ export default function ChatPanel({ intent, suggestions, authorized, raceId = nu
     const uid = retryId ?? `u${Date.now()}`;
     setMsgs((m) => (retryId ? m.map((x) => (x.id === retryId ? { ...x, failed: false } : x)) : [...m, { id: uid, role: "user", content: message }]));
     try {
-      const r = await coachRequest({ intent, message, conversationId: active, domain: "general", raceId }, authorized);
+      const r = await coachRequest({ intent, message, conversationId: active, domain: "general", raceId }, authorized, consentUser);
       if (r.kind !== "chat") throw new Error("Unexpected answer from the Coach.");
       setMsgs((m) => [...m, { id: `a${Date.now()}`, role: "assistant", content: r.answer, meta: r.meta as unknown as Record<string, unknown> }]);
       if (r.conversationId && r.conversationId !== active) setActive(r.conversationId);

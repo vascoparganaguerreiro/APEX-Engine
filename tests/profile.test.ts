@@ -261,7 +261,9 @@ test("the profile page and its integrations never touch credentials, and importe
 test("navigation and cross-module wiring", () => {
   assert.match(read("app/(app)/layout.tsx"), /\{ href: "\/profile", label: "Profile" \}/);
   assert.ok(!/href: "\/profile", label: "Profile", soon/.test(read("app/(app)/layout.tsx")));
-  assert.match(read("app/(app)/today/page.tsx"), /select\("sleep_goal_h,display_name"\)/);
+  // Today (redesigned) reads the name, time zone and sleep goal through its loader.
+  assert.match(read("lib/today/load.ts"), /from\("profiles"\)\.select\("display_name,timezone,sleep_goal_h"\)/);
+  assert.match(read("app/(app)/today/page.tsx"), /loadProfileLite\(\)/);
   assert.match(read("app/(app)/races/page.tsx"), /select\("units"\)/);
   assert.match(read("components/races/RaceForm.tsx"), /initial\?\.distance_unit \?\? defaultUnit \?\? "km"/);
 });

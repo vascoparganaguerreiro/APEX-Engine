@@ -62,7 +62,9 @@ test("fetchAthlete maps failures to IntervalsError", async () => {
 test("activity sync: every imported row is labelled source=intervals and deduplicated on (user_id, source, external_id)", async () => {
   const { readFileSync } = await import("node:fs");
   assert.equal(mapActivity({ id: 7, start_date: "2026-11-09T08:00:00Z", type: "Ride" })?.source, "intervals");
-  const route = readFileSync(new URL("../app/api/intervals/sync/route.ts", import.meta.url), "utf8");
+  // The sync logic moved from the route into a testable service (Universal Connect); the same rules must hold there.
+  const route = readFileSync(new URL("../lib/integrations/intervalsSync.ts", import.meta.url), "utf8");
+  assert.match(readFileSync(new URL("../app/api/intervals/sync/route.ts", import.meta.url), "utf8"), /runIntervalsSync\(/);
   assert.match(route, /onConflict: "user_id,source,external_id"/);
   assert.ok(!/onConflict: "user_id,external_id"/.test(route), "the old conflict target does not match production's unique key");
   assert.match(route, /source: "intervals"/);

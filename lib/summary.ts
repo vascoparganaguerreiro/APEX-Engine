@@ -8,6 +8,8 @@ Rules:
 - First say what happened, then how it compares with the athlete's recent training, then at most one practical takeaway for the next few days.
 - If the athlete wrote a note about a session, take it into account and mention it naturally.
 - Training load is an estimate and HRV is noisy: say so briefly when a conclusion depends on them.
+- Only discuss the kinds of data that appear below. If the data says the athlete did not share something (for example recovery data,
+  the training-load model or races), do not mention it, estimate it, or imply that it was considered.
 - You are not a doctor. Do not diagnose or recommend medication. For pain, injury or unusual symptoms, suggest seeing a qualified professional.
 - Write in English.`;
 
@@ -29,26 +31,33 @@ const briefLine = (b: Brief) =>
   `${b.avgHr !== null ? `, avg HR ${Math.round(b.avgHr)}` : ""}, load ${n0(b.load)}` +
   `${b.note ? `. Athlete's note: "${b.note}"` : ""}`;
 
+// Optional sections: `undefined` = the athlete did NOT consent to share it (the section is left out entirely and listed in notShared);
+// `null` = shared but no data available.
 export interface ActivityContext {
   today: string;
   activity: Brief;
   sameSportRecent: Brief[];                 // up to 6 earlier sessions of the same sport
   typical: { sessions: number; avgMinutes: number | null; avgLoad: number | null }; // same sport, last 6 weeks
-  load: LoadState | null;
-  morning: Morning | null;
-  sevenDay: { hrv: number | null; rhr: number | null; sleepH: number | null } | null;
-  race: RaceInfo | null;
+  load?: LoadState | null;
+  morning?: Morning | null;
+  sevenDay?: { hrv: number | null; rhr: number | null; sleepH: number | null } | null;
+  race?: RaceInfo | null;
+  notShared?: string[];
 }
+
+const notSharedLine = (ns: string[] | undefined) =>
+  ns && ns.length ? [`Not shared by the athlete: ${ns.join("; ")}. Do not mention, estimate or imply anything about these.`] : [];
 
 export function buildActivityPrompt(c: ActivityContext): string {
   const L = [`Today: ${c.today}`, "", "SESSION TO SUMMARISE:", briefLine(c.activity), ""];
   L.push(`Same-sport sessions in the last 6 weeks: ${c.typical.sessions}` +
     (c.typical.sessions ? `, average ${n0(c.typical.avgMinutes)} min and load ${n0(c.typical.avgLoad)}` : ""));
   if (c.sameSportRecent.length) { L.push("Recent sessions of this sport:"); c.sameSportRecent.forEach((b) => L.push("- " + briefLine(b))); }
-  L.push("", loadLine(c.load));
+  if (c.load !== undefined) L.push("", loadLine(c.load));
   if (c.morning) L.push(`That morning: HRV ${n0(c.morning.hrv, " ms")}, resting HR ${n0(c.morning.rhr)}, sleep ${c.morning.sleepH === null ? "n/a" : c.morning.sleepH.toFixed(1) + " h"}, sleep score ${n0(c.morning.sleepScore)}`);
   if (c.sevenDay) L.push(`Previous 7-day averages: HRV ${n0(c.sevenDay.hrv, " ms")}, resting HR ${n0(c.sevenDay.rhr)}, sleep ${c.sevenDay.sleepH === null ? "n/a" : c.sevenDay.sleepH.toFixed(1) + " h"}`);
-  L.push(raceLine(c.race), "", "Write the summary now.");
+  if (c.race !== undefined) L.push(raceLine(c.race));
+  L.push(...notSharedLine(c.notShared), "", "Write the summary now.");
   return L.join("\n");
 }
 
@@ -57,9 +66,10 @@ export interface WeekContext {
   today: string; weekStart: string; weekEnd: string;
   thisWeek: WeekSide; previousWeek: WeekSide; fourWeekAvg: { sessions: number; minutes: number; load: number };
   sessions: Brief[];
-  load: LoadState | null;
-  health: { hrv: number | null; rhr: number | null; sleepH: number | null; prevHrv: number | null; prevRhr: number | null; prevSleepH: number | null } | null;
-  race: RaceInfo | null;
+  load?: LoadState | null;
+  health?: { hrv: number | null; rhr: number | null; sleepH: number | null; prevHrv: number | null; prevRhr: number | null; prevSleepH: number | null } | null;
+  race?: RaceInfo | null;
+  notShared?: string[];
 }
 
 const kmText = (k: Record<string, number>) => {
@@ -74,13 +84,14 @@ export function buildWeekPrompt(c: WeekContext): string {
   L.push(`Average of the 4 weeks before this one: ${c.fourWeekAvg.sessions.toFixed(1)} sessions, ${Math.round(c.fourWeekAvg.minutes)} min, load ${Math.round(c.fourWeekAvg.load)}`);
   L.push("", "Sessions this week:");
   if (c.sessions.length) c.sessions.forEach((b) => L.push("- " + briefLine(b))); else L.push("- none recorded");
-  L.push("", loadLine(c.load));
+  if (c.load !== undefined) L.push("", loadLine(c.load));
   if (c.health) {
     const h = c.health;
     L.push(`Recovery this week (average): HRV ${n0(h.hrv, " ms")}, resting HR ${n0(h.rhr)}, sleep ${h.sleepH === null ? "n/a" : h.sleepH.toFixed(1) + " h"}; ` +
       `previous week: HRV ${n0(h.prevHrv, " ms")}, resting HR ${n0(h.prevRhr)}, sleep ${h.prevSleepH === null ? "n/a" : h.prevSleepH.toFixed(1) + " h"}`);
   }
-  L.push(raceLine(c.race), "", "Write the weekly summary now.");
+  if (c.race !== undefined) L.push(raceLine(c.race));
+  L.push(...notSharedLine(c.notShared), "", "Write the weekly summary now.");
   return L.join("\n");
 }
 

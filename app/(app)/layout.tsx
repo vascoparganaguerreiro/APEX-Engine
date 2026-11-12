@@ -10,6 +10,7 @@ const NAV = [
   { href: "/activities", label: "Activities" },
   { href: "/strength", label: "Strength" },
   { href: "/import", label: "Import" },
+  { href: "/integrations", label: "Connections" },
   { href: "/training", label: "Training", soon: true },
   { href: "/coach", label: "Coach" },
   { href: "/supplements", label: "Supplements" },
@@ -27,6 +28,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!loading && !session && !error) router.replace("/login");
   }, [loading, session, error, router]);
+
+  // On a phone the menu is a swipeable row: keep the current section in view (no vertical page jump).
+  useEffect(() => { document.querySelector(".side nav .navitem.on")?.scrollIntoView({ inline: "center", block: "nearest" }); }, [path, session]);
 
   if (error) return <div className="center"><div className="notice error">{error}</div></div>;
   if (loading || !session) return <div className="center muted">Loading…</div>;

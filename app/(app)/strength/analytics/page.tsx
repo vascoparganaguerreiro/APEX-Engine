@@ -68,8 +68,8 @@ export default function StrengthAnalyticsPage() {
               </select>
             </div>
             {key && <><div className="chart" style={{ marginTop: 10 }}><Line points={pts} unit={metric === "reps" ? "reps" : "kg"} /></div>
-              <table className="tbl"><thead><tr><th>Date</th><th>Best set</th><th>Working sets</th><th>Reps</th><th>Volume</th><th>Est. 1RM</th></tr></thead>
-                <tbody>{[...series].reverse().map((s) => <tr key={s.sessionId}><td>{s.date}</td><td>{s.best ? `${s.best.weight} ${s.best.unit} × ${s.best.reps}` : "–"}</td><td>{s.workingSets}</td><td>{s.reps}</td><td>{s.volumeKg ? `${Math.round(s.volumeKg)} kg` : "–"}</td><td>{s.e1rmKg ? `${Math.round(s.e1rmKg * 10) / 10} kg` : "–"}</td></tr>)}</tbody></table>
+              <div className="tablewrap" style={{ padding: 0 }}><table className="tbl"><thead><tr><th>Date</th><th>Best set</th><th>Working sets</th><th>Reps</th><th>Volume</th><th>Est. 1RM</th></tr></thead>
+                <tbody>{[...series].reverse().map((s) => <tr key={s.sessionId}><td>{s.date}</td><td>{s.best ? `${s.best.weight} ${s.best.unit} × ${s.best.reps}` : "–"}</td><td>{s.workingSets}</td><td>{s.reps}</td><td>{s.volumeKg ? `${Math.round(s.volumeKg)} kg` : "–"}</td><td>{s.e1rmKg ? `${Math.round(s.e1rmKg * 10) / 10} kg` : "–"}</td></tr>)}</tbody></table></div>
               <p className="muted small">Measured: sets, reps, weights. Calculated: volume (external load × reps) and the estimated 1RM. {E1RM_FORMULA}</p></>}
           </div>
 

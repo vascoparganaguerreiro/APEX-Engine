@@ -32,7 +32,7 @@ export default function ImportPage() {
       setState({ step: "preview", progress: 0 });
     } catch (e) { setError(e instanceof ImportError ? e.message : `The file could not be read: ${errText(e)}`); }
   }
-  const chosen = useMemo(() => pv?.workouts.filter((w) => w.include && w.status !== "already_imported").length ?? 0, [pv]);
+  const chosen = useMemo(() => pv?.workouts.filter((w) => w.include && w.status !== "already_imported" && w.status !== "deleted_before").length ?? 0, [pv]);
 
   async function run() {
     if (!pv || chosen === 0) return;
@@ -104,11 +104,12 @@ export default function ImportPage() {
           <h2>Workouts</h2>
           <div className="card">
             {pv.workouts.map((w, i) => (
-              <label key={w.ref} className={`check doserow${w.status === "already_imported" ? " off" : ""}`} style={{ margin: 0 }}>
-                <input type="checkbox" disabled={w.status === "already_imported"} checked={w.include} onChange={() => toggle(i)} />
+              <label key={w.ref} className={`check doserow${w.status === "already_imported" || w.status === "deleted_before" ? " off" : ""}`} style={{ margin: 0 }}>
+                <input type="checkbox" disabled={w.status === "already_imported" || w.status === "deleted_before"} checked={w.include} onChange={() => toggle(i)} />
                 <span className="muted small tl-date">{w.startedAt.slice(0, 10)}</span>
                 <span style={{ flex: 1 }}><b>{w.title}</b> <span className="muted small">· {w.exercises.length} exercises · {w.exercises.reduce((n, e) => n + e.sets.length, 0)} sets</span></span>
                 {w.status === "already_imported" && <span className="badge off">already imported</span>}
+                {w.status === "deleted_before" && <span className="badge off">imported before, then deleted by you</span>}
                 {w.status === "overlaps_apex" && <span className="pill st-low" title={`Overlaps "${w.overlapWith}" logged in APEX`}>possible duplicate of an APEX log</span>}
               </label>
             ))}

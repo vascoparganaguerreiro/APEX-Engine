@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { SYNC_TEXT, useSyncStatus } from "@/lib/strength/runtime";
+import { getEngine, useSyncStatus } from "@/lib/strength/runtime";
+import { syncLabel } from "@/lib/strength/sync";
 
 const TABS = [
   { href: "/strength", label: "Workout" }, { href: "/strength/routines", label: "Routines" }, { href: "/strength/exercises", label: "Exercises" },
@@ -25,13 +26,16 @@ export function SetupNotice({ what = "This page" }: { what?: string }) {
   );
 }
 
+/** Where the workout is right now: only on this device, waiting to upload, confirmed by the server, or failed (with a Retry). */
 export function SyncPill() {
   const { status, storage } = useSyncStatus();
   if (!status) return <span className="syncpill pending">Loading…</span>;
-  const extra = status.failed ? ` · ${status.failed} failed` : status.pending ? ` · ${status.pending}` : "";
   return (
-    <span className={`syncpill ${status.mode}`} role="status" aria-live="polite" title={[status.message, storage === "memory" ? "This browser gives no durable storage: keep the tab open until it is saved." : null].filter(Boolean).join(" ")}>
-      {SYNC_TEXT[status.mode]}{extra}
+    <span className="syncwrap">
+      <span className={`syncpill ${status.mode}`} role="status" aria-live="polite" title={[status.message, storage === "memory" ? "This browser gives no durable storage: keep the tab open until it is saved." : null].filter(Boolean).join(" ")}>
+        {syncLabel(status)}
+      </span>
+      {status.failed > 0 && <button type="button" className="chip syncretry" onClick={() => { void getEngine().then(({ engine }) => engine.retryFailed()); }}>Retry</button>}
     </span>
   );
 }

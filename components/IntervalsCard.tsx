@@ -51,11 +51,12 @@ export default function IntervalsCard() {
     } finally { setBusy(null); }
   }
 
-  async function sync() {
+  /** full = re-read the last SYNC_DAYS days; otherwise incremental since the last successful sync. */
+  async function sync(full = false) {
     setBusy("sync"); setMsg(null);
     try {
-      const r = await syncIntervals(SYNC_DAYS);
-      setMsg({ kind: "ok", text: `Synced the last ${r.days} days: ${r.activities} activities and ${r.wellness} wellness days.` });
+      const r = await syncIntervals(full ? SYNC_DAYS : undefined);
+      setMsg({ kind: "ok", text: `Synced ${r.incremental ? "new data" : `the last ${r.days} days`} (${r.oldest} to ${r.newest}): ${r.activities} activities and ${r.wellness} wellness days.${r.notes?.length ? " " + r.notes.join(" ") : ""}` });
       await load();
     } catch (err) {
       setMsg({ kind: "error", text: errMsg(err) });
@@ -81,8 +82,11 @@ export default function IntervalsCard() {
             <div><small>Last sync</small><b>{conn.last_sync_at ? new Date(conn.last_sync_at).toLocaleString() : "Never"}</b></div>
           </div>
           <div className="row">
-            <button className="btn" onClick={sync} disabled={busy !== null}>
-              {busy === "sync" ? `Syncing ${SYNC_DAYS} days…` : `Sync last ${SYNC_DAYS} days`}
+            <button className="btn" onClick={() => sync(false)} disabled={busy !== null}>
+              {busy === "sync" ? "Syncing…" : "Sync now"}
+            </button>
+            <button className="btn ghost" onClick={() => sync(true)} disabled={busy !== null} title="Read the whole range again, for example after editing old activities in Intervals.icu">
+              Re-sync last {SYNC_DAYS} days
             </button>
             <button className="btn ghost" onClick={disconnect} disabled={busy !== null}>
               {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}

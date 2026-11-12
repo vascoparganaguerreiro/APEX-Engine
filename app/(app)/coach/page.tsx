@@ -27,7 +27,7 @@ interface Daily { day: string; hrv_ms: number | null; rhr_bpm: number | null; sl
 
 export default function CoachPage() {
   const { session } = useAuth();
-  const [consent, setConsent] = useConsent();
+  const [consent, setConsent, consentReady, consentUser] = useConsent();   // the signed-in account's own consent; nothing is sent until it is loaded
   const authorized = authorizedOf(consent);
   const [tab, setTab] = useState<Tab>("ask");
   const [profile, setProfile] = useState<{ p: Profile; exists: boolean; migrated: boolean } | null>(null);
@@ -59,8 +59,9 @@ export default function CoachPage() {
   const cd = race ? countdown(race.race_date, today) : null;
 
   async function analyzeDaily() {
+    if (!consentReady) return;
     setBusy(true); setError(null);
-    try { const r = await coachRequest({ intent: "daily" }, authorized); if (r.kind !== "daily") throw new Error("Unexpected answer from the Coach."); setDailyResult(r); if (r.saved) void refreshAssessments(); }
+    try { const r = await coachRequest({ intent: "daily" }, authorized, consentUser); if (r.kind !== "daily") throw new Error("Unexpected answer from the Coach."); setDailyResult(r); if (r.saved) void refreshAssessments(); }
     catch (e) { setError(errMsg(e)); } finally { setBusy(false); }
   }
   async function removeAssessment(id: string) {
@@ -84,7 +85,7 @@ export default function CoachPage() {
       <p className="muted" style={{ marginTop: -6 }}>{hello}. Evidence-conscious guidance from your own data. It suggests, you decide.</p>
       {error && <div className="notice error" role="alert">{error}</div>}
 
-      <ConsentPanel consent={consent} onChange={setConsent} />
+      {consentReady ? <ConsentPanel consent={consent} onChange={setConsent} /> : <section className="card consent"><p className="muted small" style={{ margin: 0 }}>Loading your sharing settings…</p></section>}
 
       <section className="card" style={{ marginTop: 14 }}>
         <div className="act-head"><b>Your context today</b><span className="muted small">measured data only</span></div>
@@ -106,24 +107,25 @@ export default function CoachPage() {
         ))}
       </div>
 
-      {tab === "session" && <SessionEvaluator authorized={authorized} onSaved={refreshAssessments} />}
-      {tab === "daily" && (
+      {!consentReady && <p className="muted small">Loading your sharing settings…</p>}
+      {consentReady && tab === "session" && <SessionEvaluator authorized={authorized} consentUser={consentUser}onSaved={refreshAssessments} />}
+      {consentReady && tab === "daily" && (
         <div>
           <div className="card"><p style={{ marginTop: 0 }}>The Daily Coach reads your recent HRV, resting heart rate, sleep, training load and consistency, compares them with <b>your own</b> baseline and tells you what is missing. It never gives a single readiness score.</p>
             <div className="row"><button className="btn" onClick={() => void analyzeDaily()} disabled={busy}>{busy ? "Analysing..." : "Analyse today"}</button></div></div>
           {dailyResult && <div style={{ marginTop: 14 }}><DailyCard r={dailyResult} /></div>}
         </div>
       )}
-      {tab === "ask" && <ChatPanel intent="chat" authorized={authorized}
+      {consentReady && tab === "ask" && <ChatPanel intent="chat" authorized={authorized} consentUser={consentUser}
         suggestions={["Am I training too much?", "Why has my HRV changed this week?", "How is my endurance improving?", "Should I do intervals tomorrow?", "Explain my latest blood panel", "What should I focus on this month?"]} />}
-      {tab === "plan" && (
+      {consentReady && tab === "plan" && (
         <div>
           <div className="card" style={{ marginBottom: 14 }}>
             {race && cd ? <><small className="muted">{race.priority === "A" ? "Goal race" : "Next race"}</small><div><b>{race.name}</b> <span className="muted small">· {race.race_date} · {cd.label}</span></div></>
               : <p style={{ margin: 0 }} className="muted">No upcoming race saved. <Link href="/races" style={{ color: "var(--green)" }}>Add one in Races</Link> so the Coach can plan around it.</p>}
             <p className="muted small" style={{ marginBottom: 0 }}>The Coach will not write a detailed plan until you tell it your available days and hours, and it never changes your schedule by itself.</p>
           </div>
-          <ChatPanel intent="plan" authorized={authorized} raceId={race?.id ?? null} placeholder="Ask about your race preparation..."
+          <ChatPanel intent="plan" authorized={authorized} consentUser={consentUser}raceId={race?.id ?? null} placeholder="Ask about your race preparation..."
             suggestions={[race ? `How should I prepare for ${race.name}?` : "How should I prepare for a race?", "What are my biggest weaknesses?", "How is my current training aligned with the race?", "What should my next training block focus on?"]} />
         </div>
       )}

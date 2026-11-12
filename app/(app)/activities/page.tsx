@@ -10,6 +10,9 @@ import {
 } from "@/lib/activities";
 import ActivityCard from "@/components/ActivityCard";
 import WeekCard from "@/components/WeekCard";
+import { loadLinksOrNone, type Db as StrengthDb } from "@/lib/strength/data";
+import { loadExcludedActivityIds } from "@/lib/strength/dedup";
+import { authorizedOf, useConsent } from "@/components/coach/consent";
 
 const COLS = "id,started_at,sport,title,duration_s,distance_m,avg_hr,load,note,ai_summary,ai_summary_at";
 const errMsg = (e: unknown) =>
@@ -20,9 +23,12 @@ export default function ActivitiesPage() {
   const thisWeek = weekStart(todayIso());
   const [ws, setWs] = useState(thisWeek);
   const [acts, setActs] = useState<Activity[] | null>(null);
+  const [dup, setDup] = useState<Set<number>>(new Set());          // merged duplicate copies (Strength Hub): listed, but counted once
   const [weekSummary, setWeekSummary] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | "week" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [consent, , consentReady, consentUser] = useConsent();   // the signed-in account's own consent; no summary request until it is loaded
   const [sport, setSport] = useState("all");
   const [query, setQuery] = useState("");
 
@@ -33,6 +39,7 @@ export default function ActivitiesPage() {
         .gte("started_at", `${since}T00:00:00Z`).order("started_at", { ascending: false }).limit(800);
       if (err) throw err;
       setActs((data ?? []) as Activity[]);
+      setDup(loadExcludedActivityIds(await loadLinksOrNone(getSupabase() as unknown as StrengthDb)));
       setError(null);
     } catch (e) { setError(errMsg(e)); }
   }, []);
@@ -51,7 +58,7 @@ export default function ActivitiesPage() {
     () => (acts ?? []).filter((a) => { const d = localDay(a.started_at); return d >= ws && d <= we; }),
     [acts, ws, we],
   );
-  const totals = useMemo(() => weekTotals(acts ?? [], ws), [acts, ws]);
+  const totals = useMemo(() => weekTotals((acts ?? []).filter((a) => !dup.has(a.id)), ws), [acts, ws, dup]);
 
   // Searching looks across everything loaded (last 200 days); otherwise the list is the selected week.
   const searching = query.trim() !== "";
@@ -59,7 +66,7 @@ export default function ActivitiesPage() {
     () => filterActivities(searching ? (acts ?? []) : inWeek, sport, query),
     [acts, inWeek, sport, query, searching],
   );
-  const sum = useMemo(() => summarizeActivities(shown, sport), [shown, sport]);
+  const sum = useMemo(() => summarizeActivities(shown.filter((a) => !dup.has(a.id)), sport), [shown, sport, dup]);
   const sports = useMemo(() => {
     const present = new Set((acts ?? []).map((a) => a.sport));
     return Object.keys(SPORT_LABEL).filter((s) => present.has(s)).concat([...present].filter((s) => !(s in SPORT_LABEL)));
@@ -71,17 +78,23 @@ export default function ActivitiesPage() {
     setActs((prev) => (prev ?? []).map((a) => (a.id === id ? { ...a, note: note || null } : a)));
   }
 
+  // Summaries use the same consent as the Coach (chosen on the Coach page). Categories not switched on are never sent to the AI.
+  const sharedNote = (r: { notShared: string[] }) => setInfo(r.notShared.length ? `Summary written without ${r.notShared.join(", ")}: not shared in your Coach settings.` : null);
+  const LOADING_CONSENT = "Your sharing settings are still loading. Try again in a moment.";
   async function summarizeActivity(id: number) {
-    setBusy(id); setError(null);
+    if (!consentReady) { setInfo(LOADING_CONSENT); return; }
+    setBusy(id); setError(null); setInfo(null);
     try {
-      const r = await summarize({ kind: "activity", id });
+      const r = await summarize({ kind: "activity", id }, authorizedOf(consent), consentUser);
       setActs((prev) => (prev ?? []).map((a) => (a.id === id ? { ...a, ai_summary: r.summary, ai_summary_at: new Date().toISOString() } : a)));
+      sharedNote(r);
     } catch (e) { setError(errMsg(e)); } finally { setBusy(null); }
   }
 
   async function summarizeWeek() {
-    setBusy("week"); setError(null);
-    try { setWeekSummary((await summarize({ kind: "week", weekStart: ws })).summary); }
+    if (!consentReady) { setInfo(LOADING_CONSENT); return; }
+    setBusy("week"); setError(null); setInfo(null);
+    try { const r = await summarize({ kind: "week", weekStart: ws }, authorizedOf(consent), consentUser); setWeekSummary(r.summary); sharedNote(r); }
     catch (e) { setError(errMsg(e)); } finally { setBusy(null); }
   }
 
@@ -90,6 +103,7 @@ export default function ActivitiesPage() {
       <div className="eyebrow">Training</div>
       <h1>Activities</h1>
       {error && <div className="notice error">{error}</div>}
+      {info && <div className="notice">{info}</div>}
       {acts === null && !error && <p className="muted">Loading…</p>}
       {acts !== null && (
         <>

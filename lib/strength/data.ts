@@ -1,7 +1,7 @@
 // Strength Hub data access. Every call runs with the signed-in user's own Supabase client, so row level security limits it to their rows.
 // No credentials are read. A missing table or function (migration 13 not applied yet) is reported as NotSetUp, never as a crash.
 import type { HSession } from "./analytics.ts";
-import type { ActivitySource, Decision, Link, StrengthSource } from "./dedup.ts";
+import { strengthExcludedIds, type ActivitySource, type Decision, type Link, type StrengthSource } from "./dedup.ts";
 import { exerciseFromCustom, type CustomExerciseRow } from "./library.ts";
 import { routineFromRow, routinePayload, type Routine } from "./routines.ts";
 import { TransportError, type Op, type OpResult, type Transport } from "./sync.ts";
@@ -69,13 +69,31 @@ export function hsessionFromWorkout(w: Workout): HSession {
   return { id: w.id, title: w.title, startedAt: w.startedAt, endedAt: w.endedAt, pausedSeconds: w.pausedSeconds, source: w.source, exercises: w.exercises.map((e) => ({ key: e.key, name: e.name, loadMode: e.loadMode, sets: e.sets.map((s) => ({ type: s.type, weight: s.weight, unit: s.unit, reps: s.reps, duration_s: s.duration_s, distance_m: s.distance_m, rpe: s.rpe, completed: s.completed })) })) };
 }
 
-/** Finished, non-deleted workouts since `sinceIso` (newest first), as editable workouts. */
-export async function loadWorkouts(db: Db, a: { sinceIso?: string; limit?: number; resolve: (key: string) => Exercise | null }): Promise<Workout[]> {
-  let q = db.from("strength_sessions").select(NESTED).is("deleted_at", null).eq("status", "completed").order("started_at", { ascending: false }).limit(a.limit ?? 500);
-  if (a.sinceIso) q = q.gte("started_at", a.sinceIso);
-  const { data, error } = await q;
-  if (error) fail(error);
-  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => workoutFromRow(r, a.resolve));
+/** Read every row of an ordered query in pages. PostgREST silently caps a single response (Supabase default max_rows = 1000), so a
+ *  plain .limit(20000) can return a truncated list without any error. `build` must apply a deterministic order. */
+export async function pageAll<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: PgError | null }>, a: { size?: number; max?: number } = {}): Promise<T[]> {
+  const size = a.size ?? 500, max = a.max ?? 10_000, out: T[] = [];
+  for (let from = 0; from < max; from += size) {
+    const { data, error } = await build(from, Math.min(from + size, max) - 1);
+    if (error) fail(error);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < Math.min(size, max - from)) break;
+  }
+  return out;
+}
+
+/** Finished, non-deleted workouts, newest first, as editable workouts. Paged (complete up to `max`), optionally only those containing
+ *  some exercise keys (then only those exercises are returned for each session). */
+export async function loadWorkouts(db: Db, a: { sinceIso?: string; keys?: string[] | null; max?: number; resolve: (key: string) => Exercise | null }): Promise<Workout[]> {
+  const sel = a.keys ? NESTED.replace("strength_session_exercises(", "strength_session_exercises!inner(") : NESTED;
+  const rows = await pageAll<Record<string, unknown>>((from, to) => {
+    let q = db.from("strength_sessions").select(sel).is("deleted_at", null).eq("status", "completed");
+    if (a.sinceIso) q = q.gte("started_at", a.sinceIso);
+    if (a.keys) q = q.in("strength_session_exercises.exercise_key", a.keys);
+    return q.order("started_at", { ascending: false }).order("id", { ascending: true }).range(from, to);
+  }, { size: 200, max: a.max ?? 5000 });
+  return rows.map((r) => workoutFromRow(r, a.resolve));
 }
 export async function loadWorkout(db: Db, id: string, resolve: (key: string) => Exercise | null): Promise<Workout | null> {
   const { data, error } = await db.from("strength_sessions").select(NESTED).eq("id", id).is("deleted_at", null).maybeSingle();
@@ -83,17 +101,16 @@ export async function loadWorkout(db: Db, id: string, resolve: (key: string) => 
   return data ? workoutFromRow(data as Record<string, unknown>, resolve) : null;
 }
 
-/** History for the gym assistant: sessions containing the given exercises (or all), deleted rows excluded. */
-export async function loadHistory(db: Db, a: { keys: string[] | null; sinceIso: string; resolve: (key: string) => Exercise | null }): Promise<HSession[]> {
-  let q = db.from("strength_session_exercises").select(`id,session_id,deleted_at,strength_sessions!inner(${SESSION_COLS})`).is("deleted_at", null).gte("strength_sessions.started_at", a.sinceIso).limit(800);
-  if (a.keys) q = q.in("exercise_key", a.keys);
-  const { data, error } = await q;
-  if (error) fail(error);
-  const ids = [...new Set(((data ?? []) as Array<Record<string, unknown>>).map((r) => String(r.session_id)))].slice(0, 150);
-  if (!ids.length) return [];
-  const full = await db.from("strength_sessions").select(NESTED).in("id", ids).is("deleted_at", null).eq("status", "completed");
-  if (full.error) fail(full.error);
-  return ((full.data ?? []) as Array<Record<string, unknown>>).map((r) => hsessionFromWorkout(workoutFromRow(r, a.resolve)));
+/** Logged history as analytics sessions, newest first, deleted rows excluded. With `keys`, only sessions (and exercises) for those
+ *  exercises (gym assistant); without, every finished workout (analytics, "last time" values). */
+export async function loadHistory(db: Db, a: { keys: string[] | null; sinceIso?: string; max?: number; resolve: (key: string) => Exercise | null }): Promise<HSession[]> {
+  const [w, links] = await Promise.all([
+    loadWorkouts(db, { keys: a.keys, sinceIso: a.sinceIso, max: a.max ?? (a.keys ? 300 : 5000), resolve: a.resolve }),
+    loadLinksOrNone(db),                                              // before the duplicate tables exist (or if unreadable) nothing is excluded
+  ]);
+  // A workout logged twice (APEX + Hevy) and merged is counted ONCE everywhere: Today, "last time", records, the Coach and Ask APEX.
+  const dup = strengthExcludedIds(links);
+  return w.filter((x) => !dup.has(x.id)).map(hsessionFromWorkout);
 }
 
 // ------------------------------------------------------------------ custom exercises
@@ -131,10 +148,10 @@ export async function deleteRoutine(db: Db, id: string): Promise<void> {
 }
 
 // ------------------------------------------------------------------ import
-export async function existingForImport(db: Db): Promise<Array<{ id: string; source: string; sourceRef: string | null; startedAt: string; endedAt: string | null; title: string }>> {
-  const { data, error } = await db.from("strength_sessions").select("id,source,source_ref,started_at,ended_at,title").is("deleted_at", null).limit(20000);
-  if (error) fail(error);
-  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({ id: String(r.id), source: String(r.source), sourceRef: (r.source_ref as string | null) ?? null, startedAt: String(r.started_at), endedAt: (r.ended_at as string | null) ?? null, title: String(r.title) }));
+/** Every logged session (deleted ones included and flagged: a deleted import still blocks re-importing the same workout). Paged. */
+export async function existingForImport(db: Db): Promise<Array<{ id: string; source: string; sourceRef: string | null; startedAt: string; endedAt: string | null; title: string; deleted: boolean }>> {
+  const rows = await pageAll<Record<string, unknown>>((from, to) => db.from("strength_sessions").select("id,source,source_ref,started_at,ended_at,title,deleted_at").order("started_at", { ascending: false }).order("id", { ascending: true }).range(from, to), { size: 1000, max: 50_000 });
+  return rows.map((r) => ({ id: String(r.id), source: String(r.source), sourceRef: (r.source_ref as string | null) ?? null, startedAt: String(r.started_at), endedAt: (r.ended_at as string | null) ?? null, title: String(r.title), deleted: Boolean(r.deleted_at) }));
 }
 export async function importChunk(db: Db, sessions: Array<Record<string, unknown>>): Promise<{ imported: number; skipped: number; rejected: number; errors: Array<{ source_ref: string; error: string }> }> {
   const { data, error } = await db.rpc("import_strength_sessions", { p_source: "hevy_csv", p_sessions: sessions });
@@ -146,18 +163,19 @@ export async function importChunk(db: Db, sessions: Array<Record<string, unknown
 // ------------------------------------------------------------------ duplicates and merging
 /** Activities for duplicate matching. Provenance columns are used when migration 13 added them, otherwise the base columns. */
 export async function activitySources(db: Db, sinceIso: string): Promise<ActivitySource[]> {
-  let r = await db.from("activities").select("id,started_at,duration_s,elapsed_s,sport,title,origin,origin_device,avg_hr,max_hr,calories,load").gte("started_at", sinceIso).order("started_at", { ascending: false }).limit(2000);
-  if (r.error) r = await db.from("activities").select("id,started_at,duration_s,sport,title,avg_hr,load").gte("started_at", sinceIso).order("started_at", { ascending: false }).limit(2000);
-  if (r.error) fail(r.error);
-  return ((r.data ?? []) as Array<Record<string, unknown>>).map((a) => ({
+  const run = (cols: string) => pageAll<Record<string, unknown>>((from, to) => db.from("activities").select(cols).gte("started_at", sinceIso).order("started_at", { ascending: false }).order("id", { ascending: true }).range(from, to), { size: 1000, max: 10_000 });
+  let rows: Array<Record<string, unknown>>;
+  try { rows = await run("id,started_at,duration_s,elapsed_s,sport,title,origin,origin_device,avg_hr,max_hr,calories,load"); }
+  catch (e) { if (!(e instanceof NotSetUp)) throw e; rows = await run("id,started_at,duration_s,sport,title,avg_hr,load"); }   // provenance columns arrive with migration 13
+  return rows.map((a) => ({
     kind: "activity" as const, id: Number(a.id), startedAt: String(a.started_at), durationS: num(a.duration_s), elapsedS: num(a.elapsed_s), sport: String(a.sport), title: (a.title as string | null) ?? null,
     origin: (a.origin as string | null) ?? null, device: (a.origin_device as string | null) ?? null, avgHr: num(a.avg_hr), maxHr: num(a.max_hr), calories: num(a.calories), load: num(a.load),
   }));
 }
 export async function strengthSources(db: Db, sinceIso: string): Promise<StrengthSource[]> {
-  const { data, error } = await db.from("strength_sessions").select("id,started_at,ended_at,title,source,status,strength_session_exercises(exercise_name,deleted_at,strength_sets(id,deleted_at))").is("deleted_at", null).eq("status", "completed").gte("started_at", sinceIso).order("started_at", { ascending: false }).limit(2000);
-  if (error) fail(error);
-  return ((data ?? []) as Array<Record<string, unknown>>).map((s) => {
+  const rows = await pageAll<Record<string, unknown>>((from, to) => db.from("strength_sessions").select("id,started_at,ended_at,title,source,status,strength_session_exercises(exercise_name,deleted_at,strength_sets(id,deleted_at))")
+    .is("deleted_at", null).eq("status", "completed").gte("started_at", sinceIso).order("started_at", { ascending: false }).order("id", { ascending: true }).range(from, to), { size: 500, max: 10_000 });
+  return rows.map((s) => {
     const exs = ((s.strength_session_exercises ?? []) as Array<Record<string, unknown>>).filter((e) => !e.deleted_at);
     return {
       kind: "strength" as const, id: String(s.id), startedAt: String(s.started_at), endedAt: (s.ended_at as string | null) ?? null, title: String(s.title), source: s.source === "hevy_csv" ? "hevy_csv" as const : "apex" as const,
@@ -166,16 +184,14 @@ export async function strengthSources(db: Db, sinceIso: string): Promise<Strengt
   });
 }
 export async function loadLinks(db: Db): Promise<Link[]> {
-  const { data, error } = await db.from("training_session_links").select("training_session_id,activity_id,strength_session_id,role").limit(5000);
-  if (error) fail(error);
-  return ((data ?? []) as Array<Record<string, unknown>>).map((l) => ({ trainingSessionId: String(l.training_session_id), activityId: num(l.activity_id), strengthSessionId: (l.strength_session_id as string | null) ?? null, role: l.role === "primary" ? "primary" : "secondary" }));
+  const rows = await pageAll<Record<string, unknown>>((from, to) => db.from("training_session_links").select("id,training_session_id,activity_id,strength_session_id,role").order("id", { ascending: true }).range(from, to), { size: 1000, max: 50_000 });
+  return rows.map((l) => ({ trainingSessionId: String(l.training_session_id), activityId: num(l.activity_id), strengthSessionId: (l.strength_session_id as string | null) ?? null, role: l.role === "primary" ? "primary" : "secondary" }));
 }
 /** Same, but an empty list when migration 13 is not applied (for modules like Today that must keep working). */
 export async function loadLinksOrNone(db: Db): Promise<Link[]> { try { return await loadLinks(db); } catch { return []; } }
 export async function loadDecisions(db: Db): Promise<Array<Decision & { id: string; createdAt: string; primaryKind: string | null; confidence: string | null }>> {
-  const { data, error } = await db.from("training_merge_decisions").select("id,pair_key,decision,training_session_id,primary_kind,confidence,created_at,reverted_at").order("created_at", { ascending: false }).limit(500);
-  if (error) fail(error);
-  return ((data ?? []) as Array<Record<string, unknown>>).map((d) => ({ id: String(d.id), pairKey: String(d.pair_key), decision: d.decision === "merged" ? "merged" : "separate", trainingSessionId: (d.training_session_id as string | null) ?? null, revertedAt: (d.reverted_at as string | null) ?? null, createdAt: String(d.created_at), primaryKind: (d.primary_kind as string | null) ?? null, confidence: (d.confidence as string | null) ?? null }));
+  const rows = await pageAll<Record<string, unknown>>((from, to) => db.from("training_merge_decisions").select("id,pair_key,decision,training_session_id,primary_kind,confidence,created_at,reverted_at").order("created_at", { ascending: false }).order("id", { ascending: true }).range(from, to), { size: 1000, max: 50_000 });
+  return rows.map((d) => ({ id: String(d.id), pairKey: String(d.pair_key), decision: d.decision === "merged" ? "merged" : "separate", trainingSessionId: (d.training_session_id as string | null) ?? null, revertedAt: (d.reverted_at as string | null) ?? null, createdAt: String(d.created_at), primaryKind: (d.primary_kind as string | null) ?? null, confidence: (d.confidence as string | null) ?? null }));
 }
 export async function mergeSources(db: Db, sources: Array<{ kind: "activity" | "strength"; id: string | number }>, primaryIndex: 0 | 1, confidence: string): Promise<string> {
   const { data, error } = await db.rpc("merge_training_sources", { p_sources: sources.map((s) => ({ kind: s.kind, id: String(s.id) })), p_primary: primaryIndex, p_confidence: confidence });

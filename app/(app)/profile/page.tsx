@@ -182,7 +182,8 @@ export default function ProfilePage() {
             <div className="doserow"><b>Manual entry</b><span className="badge">Always available</span><span className="muted small">Log days on Today, races, supplements and blood tests.</span></div>
           </div>
         )}
-        <p className="muted small" style={{ marginBottom: 0 }}>Connection details are shown without any credentials. Keys are stored encrypted on the server and never sent to this page.</p>
+        <p className="muted small" style={{ marginBottom: 0 }}>Connection details are shown without any credentials. Keys are stored encrypted on the server and never sent to this page.{" "}
+          <Link href="/integrations" style={{ color: "var(--green)" }}>Open the Connectivity Centre</Link> for WHOOP, Garmin, COROS, Polar, Suunto, Oura, Apple Health, Samsung Health and Strava.</p>
       </section>
 
       {session && <GarminDeviceCard uid={session.user.id} intervals={integrations ? integrations.intervals : null} />}

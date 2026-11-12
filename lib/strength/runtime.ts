@@ -37,7 +37,3 @@ export function useSyncStatus(): { status: SyncStatus | null; storage: string | 
   }, []);
   return { status, storage };
 }
-
-export const SYNC_TEXT: Record<SyncStatus["mode"], string> = {
-  synced: "Saved", pending: "Saved on device", syncing: "Saving…", offline: "Offline: saved on device", not_set_up: "Saved on device only", auth: "Sign in to upload", error: "Retrying upload",
-};

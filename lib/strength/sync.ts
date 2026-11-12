@@ -70,10 +70,14 @@ export function diffInto(s: SyncState, w: Workout, a: { nowMs: number; newOpId: 
 /** A workout loaded from the server for editing: remember its rows as already stored (nothing is enqueued), so a later deletion
  *  is detected and sent as a tombstone, and unchanged rows are not re-sent. */
 export function adoptInto(s: SyncState, w: Workout): SyncState {
-  const known = { ...s.known };
-  for (const r of rowsOf(w)) { const k = keyOf(r.kind, r.id); if (!known[k]) known[k] = { sessionId: w.id, kind: r.kind, id: r.id, json: JSON.stringify(r.data) }; }
+  // With local changes still waiting, the device copy is newer: keep its bookkeeping. Otherwise the server copy is the truth (it may
+  // have been edited on another device), so this session's bookkeeping is replaced by it.
+  if (hasPending(s, w.id)) return s;
+  const known = Object.fromEntries(Object.entries(s.known).filter(([, v]) => v.sessionId !== w.id));
+  for (const r of rowsOf(w)) known[keyOf(r.kind, r.id)] = { sessionId: w.id, kind: r.kind, id: r.id, json: JSON.stringify(r.data) };
   return { ...s, known, sent: s.sent.includes(w.id) ? s.sent : [...s.sent, w.id] };
 }
+export const hasPending = (s: SyncState, sessionId: string) => s.queue.some((q) => q.sessionId === sessionId);
 
 /** Cancel a workout: anything not yet sent is dropped; if the server already has part of it, a session tombstone hides it. */
 export function discardInto(s: SyncState, w: Workout, a: { nowMs: number; newOpId: () => string; inflight: ReadonlySet<string> }): SyncState {
@@ -104,8 +108,29 @@ export function applyResults(s: SyncState, sent: QueuedOp[], results: OpResult[]
   return { ...s, queue, sent: [...sessions], stale };
 }
 
-export type SyncMode = "synced" | "pending" | "syncing" | "offline" | "not_set_up" | "auth" | "error";
+/** "synced": nothing is waiting. "failed": nothing is still being retried, but changes were rejected and need attention (Retry). */
+export type SyncMode = "synced" | "pending" | "syncing" | "offline" | "not_set_up" | "auth" | "error" | "failed";
 export interface SyncStatus { mode: SyncMode; pending: number; failed: number; stale: number; message: string | null; lastSyncedAt: string | null }
+
+/** What the sync indicator says. Four distinct situations, never blurred:
+ *   on this device only / waiting to upload  ->  "On device…"  (pending, offline, not set up, auth, retrying)
+ *   uploaded and confirmed by the server       ->  "Saved to server"  (only after the server acknowledged a change in this session)
+ *   upload failed                              ->  "Upload failed…"
+ *  With nothing waiting and no confirmation yet in this session (for example right after opening the app) it says so, instead of
+ *  claiming that anything was saved to the server. */
+export function syncLabel(s: Pick<SyncStatus, "mode" | "pending" | "failed" | "lastSyncedAt">): string {
+  const n = s.pending, f = s.failed ? ` · ${s.failed} failed` : "";
+  switch (s.mode) {
+    case "synced": return s.lastSyncedAt ? "Saved to server" : "Nothing waiting to upload";
+    case "pending": return `On device · waiting to upload (${n})${f}`;
+    case "syncing": return `Uploading… (${n})${f}`;
+    case "offline": return `Offline · on device, will upload (${n})${f}`;
+    case "not_set_up": return `On device only · server not set up (${n})${f}`;
+    case "auth": return `On device · sign in to upload (${n})${f}`;
+    case "error": return `On device · upload failed, retrying (${n})${f}`;
+    case "failed": return `Upload failed · ${s.failed} change${s.failed === 1 ? "" : "s"} need attention`;
+  }
+}
 
 /** Stateful wrapper used by the app: serialises flushes and persists every change before it is sent. */
 export class SyncEngine {
@@ -132,8 +157,11 @@ export class SyncEngine {
 
   private refresh(mode?: SyncMode, message?: string | null) {
     const pending = this.data.sync.queue.filter((q) => !q.failed).length, failed = this.data.sync.queue.filter((q) => q.failed).length;
-    const m: SyncMode = mode ?? (pending ? "pending" : "synced");
-    this.st = { ...this.st, mode: m === "synced" && pending ? "pending" : m, pending, failed, stale: this.data.sync.stale, message: message === undefined ? this.st.message : message };
+    let m: SyncMode = mode ?? (pending ? "pending" : "synced");
+    if (m === "synced" && pending) m = "pending";
+    if (m === "synced" && failed) m = "failed";                       // parked (rejected) changes are never reported as saved
+    const msg = message === undefined ? this.st.message : message;
+    this.st = { ...this.st, mode: m, pending, failed, stale: this.data.sync.stale, message: m === "failed" && !msg ? `${failed} change${failed === 1 ? " was" : "s were"} rejected by the server. They are still saved on this device. Use Retry.` : msg };
     for (const f of this.listeners) f(this.st);
   }
   /** Writes are serialised so an older snapshot can never overwrite a newer one in the store. */
@@ -153,10 +181,17 @@ export class SyncEngine {
     await this.persist();
   }
   /** Start editing a workout that came from the server (see adoptInto). */
-  async adopt(w: Workout): Promise<void> {
-    this.data = { ...this.data, workouts: { ...this.data.workouts, [w.id]: this.data.workouts[w.id] ?? w }, sync: adoptInto(this.data.sync, w) };
+  /** Returns the copy to edit: the device copy if it still has unsent changes, otherwise the server copy. */
+  async adopt(w: Workout): Promise<Workout> {
+    const local = this.data.workouts[w.id];
+    const keepLocal = Boolean(local) && hasPending(this.data.sync, w.id);
+    const use = keepLocal ? local : w;
+    this.data = { ...this.data, workouts: { ...this.data.workouts, [w.id]: use }, sync: adoptInto(this.data.sync, w) };
     await this.persist();
+    return use;
   }
+  /** Workouts on this device that still have changes waiting to upload. */
+  pendingWorkouts(): Workout[] { return Object.values(this.data.workouts).filter((w) => w.id !== this.data.activeId && hasPending(this.data.sync, w.id)); }
   async discard(w: Workout): Promise<void> {
     const workouts = { ...this.data.workouts }; delete workouts[w.id];
     this.data = { ...this.data, workouts, activeId: this.data.activeId === w.id ? null : this.data.activeId, sync: discardInto(this.data.sync, w, { nowMs: this.clock.nowMs(), newOpId: () => this.clock.newId(), inflight: this.inflight }) };
@@ -186,7 +221,7 @@ export class SyncEngine {
     await this.writing.catch(() => undefined);
     for (let round = 0; round < 20; round++) {
       const batch = this.data.sync.queue.filter((q) => !q.failed && !this.inflight.has(q.op_id)).slice(0, BATCH);
-      if (batch.length === 0) { this.refresh(undefined, this.data.sync.queue.some((q) => q.failed) ? "Some changes could not be saved." : null); return this.st; }
+      if (batch.length === 0) { this.refresh(undefined, this.data.sync.queue.some((q) => q.failed) ? "Some changes could not be uploaded. They are still saved on this device: use Retry." : null); return this.st; }
       batch.forEach((q) => this.inflight.add(q.op_id));
       this.refresh("syncing");
       let results: OpResult[];
@@ -202,7 +237,8 @@ export class SyncEngine {
       }
       batch.forEach((q) => this.inflight.delete(q.op_id));
       this.data = { ...this.data, sync: applyResults(this.data.sync, batch, results) };
-      this.st = { ...this.st, lastSyncedAt: new Date(this.clock.nowMs()).toISOString() };
+      // "Saved to server" is only claimed once the server really acknowledged something (applied or already known), not for a rejection.
+      if (results.some((r) => r.status === "applied" || r.status === "stale")) this.st = { ...this.st, lastSyncedAt: new Date(this.clock.nowMs()).toISOString() };
       await this.persist();
       if (results.some((r) => r.status === "rejected")) { this.refresh(undefined, "Some changes were rejected and will be retried."); return this.st; }
     }

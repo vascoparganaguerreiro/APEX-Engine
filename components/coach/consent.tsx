@@ -1,32 +1,33 @@
 "use client";
 import { useEffect, useState } from "react";
-import { CATEGORIES, CATEGORY_INFO, type Category } from "@/lib/coach/schema";
+import { CATEGORY_INFO, type Category } from "@/lib/coach/schema";
+import { useAuth } from "@/lib/useAuth";
+import {
+  COACH_CATEGORIES, EMPTY_CONSENT_STATE, authorizedOf, consentView, loadConsentState, saveConsentState, validUid,
+  type Consent, type ConsentState, type ConsentStorage,
+} from "@/lib/coach/consentStore";
 
-export interface Consent { accepted: boolean; categories: Category[] }
-const KEY = "apex.coach.consent.v1";
-const NONE: Consent = { accepted: false, categories: [] };
+export { authorizedOf, type Consent };
+const storage = (): ConsentStorage | null => { try { return window.localStorage; } catch { return null; } };
 
-/** Consent lives in this browser only and is re-sent (and re-checked by the server) with every request. */
-export function useConsent(): [Consent, (c: Consent) => void, boolean] {
-  const [c, setC] = useState<Consent>(NONE);
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(KEY) ?? "null") as Consent | null;
-      if (raw && typeof raw.accepted === "boolean" && Array.isArray(raw.categories)) setC({ accepted: raw.accepted, categories: raw.categories.filter((x): x is Category => (CATEGORIES as readonly string[]).includes(x)) });
-    } catch { /* ignore */ }
-    setReady(true);
-  }, []);
-  const save = (next: Consent) => { setC(next); try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* ignore */ } };
-  return [c, save, ready];
+/** Consent of the SIGNED-IN account only (lib/coach/consentStore.ts), kept in this browser and re-sent (and re-checked by the server)
+ *  with every request. `ready` is false while auth or that account's consent is loading, when signed out, and for one render after an
+ *  account switch; until then the consent is "nothing shared" and changes are ignored. The 4th value is the account the consent was
+ *  loaded for (null until ready); every AI request sends it so the server can reject a token from another account (lib/consentOwner.ts). */
+export function useConsent(): [Consent, (c: Consent) => void, boolean, string | null] {
+  const { session, loading } = useAuth();
+  const uid = loading ? null : validUid(session?.user?.id);
+  const [state, setState] = useState<ConsentState>(EMPTY_CONSENT_STATE);
+  useEffect(() => { setState(loadConsentState(storage(), uid)); }, [uid]);   // sign-out / switch: the previous account's state is dropped
+  const { consent, ready } = consentView(state, uid);
+  const save = (next: Consent) => { const s = saveConsentState(storage(), state, uid, next); if (s) setState(s); };
+  return [consent, save, ready, ready ? uid : null];
 }
-/** What may actually be sent: nothing unless the user has accepted. */
-export const authorizedOf = (c: Consent): Category[] => (c.accepted ? c.categories : []);
 
 export default function ConsentPanel({ consent, onChange }: { consent: Consent; onChange: (c: Consent) => void }) {
   const [open, setOpen] = useState(false);
   const on = authorizedOf(consent);
-  const toggle = (cat: Category) => onChange({ ...consent, categories: consent.categories.includes(cat) ? consent.categories.filter((x) => x !== cat) : CATEGORIES.filter((x) => x === cat || consent.categories.includes(x)) });
+  const toggle = (cat: Category) => onChange({ ...consent, categories: consent.categories.includes(cat) ? consent.categories.filter((x) => x !== cat) : COACH_CATEGORIES.filter((x) => x === cat || consent.categories.includes(x)) });
   return (
     <section className="card consent">
       <div className="act-head">
@@ -39,7 +40,7 @@ export default function ConsentPanel({ consent, onChange }: { consent: Consent; 
       </p>
       {open && (
         <div style={{ marginTop: 12 }}>
-          {CATEGORIES.map((c) => (
+          {COACH_CATEGORIES.map((c) => (
             <label key={c} className="check consentrow">
               <input type="checkbox" checked={consent.categories.includes(c)} onChange={() => toggle(c)} style={{ width: "auto" }} />
               <span><b>{CATEGORY_INFO[c].label}</b><br /><span className="muted small">{CATEGORY_INFO[c].sends}</span></span>

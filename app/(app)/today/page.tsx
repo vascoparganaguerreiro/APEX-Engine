@@ -1,151 +1,135 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
-import { addDays, readiness, trendSeries } from "@/lib/engine";
+import { addDays, trendSeries } from "@/lib/engine";
 import { dailyLoads } from "@/lib/activities";
-import { buildManualPatch, type MetricRow } from "@/lib/provenance";
-import { todayIso } from "@/lib/dates";
-import type { DailyRow } from "@/lib/types";
-import TodayView from "@/components/TodayView";
-import { NextRaceCard } from "@/components/races/RaceBits";
-import { daysUntil, nextUpcomingRace, type Race } from "@/lib/races";
-import { loadLinksOrNone, type Db as StrengthDb } from "@/lib/strength/data";
-import { loadExcludedActivityIds } from "@/lib/strength/dedup";
+import { nextRace, type Race } from "@/lib/races";
+import {
+  biomarkerSummary, dayIn, enduranceSummary, fiveDays, greeting, hourIn, longDate, overview, strengthSummary, supplementSummary, userZone, wellnessSummary,
+  type ActLite, type DailyRow, type PanelLite, type ResultLite, type StrengthLite,
+} from "@/lib/today/model";
+import {
+  loadActiveWorkout, loadActivities, loadBiomarkers, loadDaily, loadIntervalsConnected, loadLatestDaily, loadProfileLite, loadRaces, loadStrength, loadSupplements,
+  loadWhoopRecovery, type ProfileLite, type Section,
+} from "@/lib/today/load";
+import type { Intake, Schedule, Supplement } from "@/lib/health/core";
+import type { AssessmentRow } from "@/lib/coach/client";
+import { BiomarkersCard, EnduranceCard, RaceCard, StrengthCard, SupplementsCard, WellnessCard } from "@/components/today/Modules";
+import FiveDay from "@/components/today/FiveDay";
+import CoachInsight from "@/components/today/CoachInsight";
+import QuickLog, { type QuickTab } from "@/components/today/QuickLog";
+import TrendChart from "@/components/TrendChart";
 
-const errMsg = (e: unknown) =>
-  e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e);
-
-const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+const deviceZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return "UTC"; } };
+const LOADING = { status: "unavailable", reason: "Loading…" } as const;
+type Sups = { sups: Supplement[]; schedules: Schedule[]; intakes: Intake[] };
 
 export default function TodayPage() {
   const { session } = useAuth();
-  const [rows, setRows] = useState<DailyRow[] | null>(null);
-  const [upcomingRace, setUpcomingRace] = useState<Race | null>(null);
-  const [loads, setLoads] = useState<Record<string, number>>({});
-  const [goal, setGoal] = useState(8);
-  const [name, setName] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<ProfileLite | null>(null);
+  const [now, setNow] = useState(() => new Date());
+  const tz = userZone(profile?.timezone, deviceZone());
+  const today = dayIn(now, tz);
 
-  const [day, setDay] = useState(todayIso());
-  const [hrv, setHrv] = useState("");
-  const [rhr, setRhr] = useState("");
-  const [sleep, setSleep] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [existing, setExisting] = useState<MetricRow | null>(null);   // saved row for the selected day
-  const [formMsg, setFormMsg] = useState<string | null>(null);
+  const [daily, setDaily] = useState<Section<DailyRow[]> | null>(null);
+  const [acts, setActs] = useState<Section<ActLite[]> | null>(null);
+  const [strength, setStrength] = useState<Section<StrengthLite[]> | null>(null);
+  const [bio, setBio] = useState<Section<{ panel: PanelLite | null; results: ResultLite[] }> | null>(null);
+  const [sups, setSups] = useState<Section<Sups> | null>(null);
+  const [races, setRaces] = useState<Section<Race[]> | null>(null);
+  const [coach, setCoach] = useState<Section<AssessmentRow | null> | null>(null);
+  const [active, setActive] = useState<{ title: string; startedAt: string } | null>(null);
+  const [whoop, setWhoop] = useState<{ value: number; day: string | null } | null>(null);
+  const [intervals, setIntervals] = useState(false);
+  const [quick, setQuick] = useState<{ open: boolean; tab: QuickTab }>({ open: false, tab: "wellness" });
+  const [trendRange, setTrendRange] = useState<14 | 30>(14);
 
-  // Selecting a day loads what is really saved for it (empty fields for a new day: no invented values).
-  const loadDay = useCallback(async (d: string) => {
-    const { data, error: err } = await getSupabase().from("daily_metrics")
-      .select("hrv_ms,rhr_bpm,sleep_minutes,sleep_score,hrv_source,rhr_source,sleep_source,sleep_score_source")
-      .eq("day", d).maybeSingle();
-    if (err) { setError(err.message); return; }
-    const row = (data as MetricRow | null) ?? null;
-    setExisting(row);
-    setHrv(row?.hrv_ms != null ? String(row.hrv_ms) : "");
-    setRhr(row?.rhr_bpm != null ? String(row.rhr_bpm) : "");
-    setSleep(row?.sleep_minutes != null ? String(Math.round((row.sleep_minutes / 60) * 100) / 100) : "");
+  // Every module loads on its own: one failing (or a migration not applied yet) never blocks the others.
+  const loadAll = useCallback(async (day: string) => {
+    void loadDaily(day).then(setDaily);
+    void loadActivities(day).then(setActs);
+    void loadStrength(day).then(setStrength);
+    void loadBiomarkers().then(setBio);
+    void loadSupplements(day).then(setSups);
+    void loadRaces().then(setRaces);
+    void loadLatestDaily().then(setCoach);
+    void loadActiveWorkout().then(setActive);
+    void loadWhoopRecovery().then(setWhoop);
+    void loadIntervalsConnected().then(setIntervals);
   }, []);
+  useEffect(() => { if (session) void loadProfileLite().then(setProfile).catch(() => setProfile({ display_name: null, timezone: null, sleep_goal_h: null })); }, [session]);
+  useEffect(() => { if (session && profile) void loadAll(today); }, [session, profile, today, loadAll]);
+  useEffect(() => { const t = window.setInterval(() => setNow(new Date()), 60_000); return () => window.clearInterval(t); }, []);   // greeting and "today" roll over at midnight
 
-  useEffect(() => { if (session) { setFormMsg(null); loadDay(day); } }, [session, day, loadDay]);
-
-  const load = useCallback(async () => {
-    try {
-      const sb = getSupabase();
-      const since = addDays(todayIso(), -45);
-      const loadSince = addDays(todayIso(), -210);   // CTL needs months of history to be meaningful
-      const [prof, daily, acts, links] = await Promise.all([
-        sb.from("profiles").select("sleep_goal_h,display_name").maybeSingle(),
-        sb.from("daily_metrics").select("day,hrv_ms,rhr_bpm,sleep_minutes,sleep_score").gte("day", since).order("day"),
-        sb.from("activities").select("id,started_at,load").gte("started_at", `${loadSince}T00:00:00Z`).limit(5000),
-        loadLinksOrNone(sb as unknown as StrengthDb),          // merged duplicates (Strength Hub); empty before migration 13
-      ]);
-      if (daily.error) throw daily.error;
-      if (acts.error) throw acts.error;
-      setRows((daily.data ?? []) as DailyRow[]);
-      // A copy of the same session (e.g. Strava duplicate of a Garmin recording) that the user merged is counted once.
-      const dup = loadExcludedActivityIds(links);
-      setLoads(dailyLoads(((acts.data ?? []) as Array<{ id: number; started_at: string; load: number | null }>).filter((a) => !dup.has(Number(a.id)))));
-      if (prof.data?.sleep_goal_h) setGoal(Number(prof.data.sleep_goal_h));
-      setName(prof.data?.display_name?.trim() || null);
-      setError(null);
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }, []);
-
-  useEffect(() => { if (session) load(); }, [session, load]);
-  // The next race is a bonus: if it cannot be loaded (for example the Race Hub migration is not applied) Today still works.
-  useEffect(() => {
-    if (!session) return;
-    nextUpcomingRace(getSupabase(), todayIso()).then(setUpcomingRace).catch(() => setUpcomingRace(null));
-  }, [session]);
-
-  const latest = rows && rows.length ? rows[rows.length - 1] : null;
-  const prior = rows && latest ? rows.filter((r) => r.day !== latest.day).slice(-14) : [];
-  const result = latest
-    ? readiness({
-        hrv: num(latest.hrv_ms), rhr: num(latest.rhr_bpm),
-        sleepH: latest.sleep_minutes ? Number(latest.sleep_minutes) / 60 : null,
-        hrvPrior: prior.map((r) => num(r.hrv_ms)), rhrPrior: prior.map((r) => num(r.rhr_bpm)),
-        sleepGoalH: goal,
-      })
-    : null;
-
-  const today = todayIso();
+  const goal = profile?.sleep_goal_h ?? null;          // the user's own goal, or none (sleep is then left out of the estimate)
+  const w = useMemo(() => (daily?.status === "ok" ? wellnessSummary(daily.data, today, goal) : null), [daily, today, goal]);
+  const loads = useMemo(() => (acts?.status === "ok" ? dailyLoads(acts.data, tz) : {}), [acts, tz]);
   const trend = useMemo(() => {
-    const hrvByDay: Record<string, number | null> = {};
-    for (const r of rows ?? []) hrvByDay[r.day] = num(r.hrv_ms);
-    return trendSeries(loads, hrvByDay, addDays(today, -29), today);
-  }, [rows, loads, today]);
+    const hrv: Record<string, number | null> = {};
+    if (daily?.status === "ok") for (const r of daily.data) hrv[r.day] = r.hrv_ms;
+    return trendSeries(loads, hrv, addDays(today, -29), today);
+  }, [loads, daily, today]);
+  const e = useMemo(() => (acts?.status === "ok" ? enduranceSummary(acts.data, trend, today, tz) : null), [acts, trend, today, tz]);
+  const st = useMemo(() => (strength?.status === "ok" ? strengthSummary(strength.data, today, tz) : null), [strength, today, tz]);
+  const b = useMemo(() => (bio?.status === "ok" ? biomarkerSummary(bio.data.panel, bio.data.results, today) : null), [bio, today]);
+  const sup = useMemo(() => (sups?.status === "ok" ? supplementSummary(sups.data.sups, sups.data.schedules, sups.data.intakes, today) : null), [sups, today]);
+  const race = races?.status === "ok" ? nextRace(races.data, today) : null;
+  const days = useMemo(() => fiveDays({
+    today, tz, races: races?.status === "ok" ? races.data : [], acts: acts?.status === "ok" ? acts.data : [], strength: strength?.status === "ok" ? strength.data : [],
+    activeWorkout: active, sups: sups?.status === "ok" ? sups.data.sups : [], schedules: sups?.status === "ok" ? sups.data.schedules : [], supToday: sup,
+  }), [today, tz, races, acts, strength, active, sups, sup]);
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    if (!session) return;
-    setFormMsg(null);
-    const res = buildManualPatch(existing, { hrv, rhr, sleepH: sleep });
-    if (res.error !== undefined) { setError(res.error); return; }   // narrows the result to its { patch } variant
-    if (Object.keys(res.patch).length === 0) { setError(null); setFormMsg("Nothing to save: no field was filled in or changed."); return; }
-    setSaving(true);
-    // Atomic function in Postgres: only the supplied fields are written; everything else (other measurements,
-    // sleep score, provenance) is left exactly as it is.
-    const { error: err } = await getSupabase().rpc("apply_manual_metrics", {
-      p_day: day, p_hrv: res.patch.hrv_ms ?? null, p_rhr: res.patch.rhr_bpm ?? null, p_sleep_minutes: res.patch.sleep_minutes ?? null,
-    });
-    setSaving(false);
-    if (err) { setError(err.message); return; }
-    setError(null);
-    setFormMsg("Saved.");
-    await Promise.all([load(), loadDay(day)]);
-  }
+  const name = profile?.display_name;
+  const lines = w ? overview({ w, e, st, sup, race, today }) : [];
+  const openQuick = (tab: QuickTab) => setQuick({ open: true, tab });
+  const view = trend.slice(-trendRange);
+  const hasLoad = trend.some((p) => p.load > 0);
 
   return (
     <>
-      <div className="eyebrow">Command Center</div>
-      <h1>Today</h1>
-      {name && <p className="muted small" style={{ marginTop: -8 }}>Hi, {name}.</p>}
-      {error && <div className="notice error">{error}</div>}
-      {upcomingRace && daysUntil(upcomingRace.race_date, today) <= 365 && <NextRaceCard race={upcomingRace} today={today} />}
-      {rows === null && !error ? <p className="muted">Loading…</p> : <TodayView result={result} latest={latest} goal={goal} today={today} trend={trend} />}
+      <header className="td-hero">
+        <div>
+          <div className="eyebrow">{longDate(today)}{profile?.timezone && profile.timezone !== deviceZone() ? ` · ${tz}` : ""}</div>
+          <h1 className="td-hello">{greeting(hourIn(now, tz))}{name ? `, ${name}` : ""}.</h1>
+          {lines.length > 0 ? <ul className="td-overview">{lines.map((l) => <li key={l}>{l}</li>)}</ul> : <p className="td-meta">{daily ? "" : "Loading your day…"}</p>}
+        </div>
+        <button type="button" className="btn td-quickbtn" onClick={() => openQuick("wellness")}>+ Quick log</button>
+      </header>
 
-      <h2>Log a day</h2>
-      <p className="muted small">
-        {existing
-          ? `Editing the saved entry for ${day}. Only the fields you change are updated.`
-          : `New entry for ${day}. Fill in only what you measured; empty fields stay empty.`}
-      </p>
-      {formMsg && <div className={formMsg === "Saved." ? "notice ok" : "notice"}>{formMsg}</div>}
-      <form className="card formgrid" onSubmit={save}>
-        <label>Date<input type="date" value={day} max={todayIso()} onChange={(e) => setDay(e.target.value)} required /></label>
-        <label>Overnight HRV (ms){existing?.hrv_ms != null && <small>{existing.hrv_source === "intervals" ? "synced" : "manual"}</small>}
-          <input type="number" step="0.1" min="1" value={hrv} onChange={(e) => setHrv(e.target.value)} /></label>
-        <label>Resting HR (bpm){existing?.rhr_bpm != null && <small>{existing.rhr_source === "intervals" ? "synced" : "manual"}</small>}
-          <input type="number" step="1" min="20" value={rhr} onChange={(e) => setRhr(e.target.value)} /></label>
-        <label>Sleep (hours){existing?.sleep_minutes != null && <small>{existing.sleep_source === "intervals" ? "synced" : "manual"}</small>}
-          <input type="number" step="0.25" min="0.25" value={sleep} onChange={(e) => setSleep(e.target.value)} /></label>
-        <button className="btn" disabled={saving} type="submit">{saving ? "Saving…" : "Save"}</button>
-      </form>
+      <div className="td-bento">
+        <WellnessCard s={daily ?? LOADING} w={w} today={today} goal={goal} whoop={whoop} onLog={() => openQuick("wellness")} />
+        <RaceCard s={races ?? LOADING} race={race} today={today} />
+        <EnduranceCard s={acts ?? LOADING} e={e} today={today} />
+        <StrengthCard s={strength ?? LOADING} st={st} today={today} active={active} />
+        <SupplementsCard s={sups ?? LOADING} sup={sup} onLog={() => openQuick("supplements")} />
+        <BiomarkersCard s={bio ?? LOADING} b={b} today={today} />
+      </div>
+
+      <FiveDay days={days} />
+      <CoachInsight s={coach ?? LOADING} today={today} tz={tz} onSaved={() => void loadLatestDaily().then(setCoach)} />
+
+      <details className="td-trends">
+        <summary>Trends: HRV and training load</summary>
+        <div className="row" role="group" aria-label="Trend range" style={{ margin: "12px 0" }}>
+          {([14, 30] as const).map((r) => <button key={r} type="button" className={trendRange === r ? "chip on" : "chip"} aria-pressed={trendRange === r} onClick={() => setTrendRange(r)}>{r} days</button>)}
+        </div>
+        <div className="charts">
+          <TrendChart title="HRV (ms) · gaps are days without a measurement" days={view.map((p) => p.day)} lines={[{ label: "HRV", color: "var(--green)", values: view.map((p) => p.hrv) }]} />
+          {hasLoad ? (
+            <TrendChart title="Fitness, fatigue and form (model)" days={view.map((p) => p.day)} zero lines={[
+              { label: "CTL fitness", color: "var(--blue)", values: view.map((p) => p.ctl) },
+              { label: "ATL fatigue", color: "var(--amber)", values: view.map((p) => p.atl) },
+              { label: "TSB form", color: "var(--green)", values: view.map((p) => p.tsb), dashed: true },
+            ]} />
+          ) : <div className="card chart"><b>Fitness, fatigue and form</b><p className="td-meta">Needs activities with a training load.</p></div>}
+        </div>
+      </details>
+
+      {session && (
+        <QuickLog open={quick.open} tab={quick.tab} onTab={(t) => setQuick({ open: true, tab: t })} onClose={() => setQuick((q) => ({ ...q, open: false }))}
+          today={today} uid={session.user.id} sup={sup} intervalsConnected={intervals} activeWorkout={!!active}
+          onChanged={() => { void loadDaily(today).then(setDaily); void loadSupplements(today).then(setSups); void loadActivities(today).then(setActs); }} />
+      )}
     </>
   );
 }

@@ -64,20 +64,54 @@ The file does not say whether dumbbell weights are per hand or combined, so the 
 
 - No demonstration images are bundled. Only original or properly licensed media may be added.
 - Ask APEX does not resolve custom exercises when proposing substitutions; only library exercises can be proposed.
-- Ask APEX history covers the last 365 days.
-- Analytics read finished workouts from the server. Workouts still waiting to upload appear only after they sync.
+- Ask APEX history covers the last 365 days (up to 300 sessions containing the exercises in question).
+- Analytics read all finished workouts from the server (paged, up to 5,000). Workouts still waiting to upload appear only after they sync.
+- A Hevy workout that was imported and then deleted in APEX is not imported again from the same file (its fingerprint is kept); the preview says so.
 - Voice uses the browser's Web Speech API, so audio goes to Google (Chrome) or Apple (Safari) for transcription. APEX stores no audio. On iOS, Safari's recognition needs Siri/Dictation enabled; Firefox has no recognition, so the text fallback is used.
 - Rest-timer notifications in a background tab depend on browser and OS. iOS only allows web notifications for installed web apps.
 
-## Browser QA checklist (not yet done)
+## Applying the pending migrations (staging only)
 
-1. Chrome (Android and desktop) and Safari (iOS): start a workout, log sets, refresh mid-workout, close and reopen the browser, and confirm nothing is lost.
-2. Airplane mode: log 10 or more sets, finish, reconnect. Each set should appear once in Supabase (`select count(*) from strength_sets where session_id = …`).
-3. Two tabs open on the same workout: edit in both, and check that sync converges with no duplicates.
-4. Rest timer: background tab, screen locked, vibration and sound, then the +15/−15, pause and reset buttons.
-5. Push-to-talk on Chrome and iOS Safari: deny and then allow microphone permission; check that "8 reps at 80 kilos" shows a proposal and nothing is applied without Confirm.
-6. Ask APEX with and without the Strength consent box; with migration 12 missing (expect 503) and applied.
-7. Hevy import with a real export: preview, mapping, import, then import again (expect 0 new).
-8. Duplicates: a Garmin strength activity and the matching Hevy workout. Merge with each primary, check the Timeline shows one entry, unmerge, keep separate, then "Ask me again".
-9. Export a routine `.fit` to a Forerunner 965 over USB and check Training → Workouts. Record the result in this file.
-10. Mobile layout at 360 px width: touch targets, sticky header, rest bar and Ask APEX button must not overlap the inputs.
+Order: **09 → 10 → 11 → 12 → 13**. None of them depends on another at the SQL level (09: auth.users; 10: races; 11: profiles; 12: auth.users; 13: auth.users + activities), so a failure in one never breaks the next. The order matches the app's features: biomarker limiter, Race Hub, Profile, Coach (needed by Ask APEX), Strength Hub.
+
+For each file: paste it into the SQL Editor wrapped in `begin;` … `commit;`, so an error leaves nothing half-applied. Then run its verification queries (at the end of each file). Before 13, also run:
+
+```sql
+select column_name, data_type from information_schema.columns
+where table_schema = 'public' and table_name = 'activities' order by ordinal_position;
+```
+
+`id` must be an integer type, and `user_id` must be a uuid. If `origin`, `origin_device`, `elapsed_s`, `max_hr` or `calories` already exist with another meaning or type, stop and review: 13 would skip adding them and the sync would write into them.
+
+## Exact browser QA sequence (not yet done)
+
+Run the app locally (`npm run dev`) against the staging Supabase project, signed in with a staging test account.
+
+**Stage A: before applying anything (missing-migration behaviour)**
+1. Open Today, Activities, Timeline, Coach and Profile. Each must load without errors. Profile → Wearable device says migration 13 is needed.
+2. Strength: start an empty workout, add Bench Press, enter 60 × 10, tap ✓. The sync pill must say "Saved on device only". Refresh the page: the set must still be there.
+3. Finish the workout. The summary opens from the device copy. Routines, Progress, Import and Duplicates must show the setup notice, not an error.
+
+**Stage B: apply 09, 10, 11, 12**
+4. Biomarkers → upload a report: it is read, not answered with 503 (limiter present).
+5. Races and Profile: save a race and a baseline.
+6. Coach → chat works. Its consent list has no "Strength training" switch.
+7. Strength (live workout) → Ask APEX without ticking "Share this workout": the answer is general guidance. Tick it and ask "Should I add weight?": the answer refers to your sets.
+
+**Stage C: apply 13, then refresh the app**
+8. The workout from step 2 uploads by itself: the pill shows "Saved". Supabase: `select count(*) from strength_sets where session_id = '<id>'` returns exactly the number of sets.
+9. Run an Intervals.icu sync. Then `select origin, origin_device from activities order by started_at desc limit 5` is filled for new rows; older rows are unchanged.
+10. **Offline:** start a workout, turn on airplane mode, log 10 or more sets (including one deleted and one edited), finish, close the browser. Reopen, turn the network back on, and wait for "Saved". Supabase shows each set once, with no deleted set.
+11. **Lost connection mid-upload:** in DevTools set the network to Offline while the pill says "Saving…", then back online. Still no duplicates.
+12. **Two tabs:** open the same finished workout in two tabs, change different sets in each, reload both: both changes are present.
+13. Rest timer: complete a set, lock the phone, and check vibration and sound at 0. Check +15, −15, pause, reset and skip.
+14. Superset two exercises: there is no rest between A and B, and rest comes after B.
+15. Push-to-talk (Chrome Android, iOS Safari): first deny the microphone (a helpful message must appear), then allow it. Say "8 reps at 80 kilos, add that set": a proposal appears and nothing changes until you tap Confirm. Changing a completed set asks again.
+16. Say or type "I felt a sharp pain in my shoulder": the stop and medical-assessment reply appears, with no AI call.
+17. Routines: create one from the Push template, reorder it, add a substitute, save, duplicate it, delete the copy, then Start workout from it.
+18. Hevy: import a real export. Check the column detection, units, the dumbbell choice and the unmatched names. Import, then import the same file again: everything shows "already imported" and 0 are imported. Delete one imported workout and import again: it shows "imported before, then deleted" and is not re-added.
+19. Duplicates: with a Garmin strength activity and the matching Hevy workout, merge with Garmin as primary. The Timeline shows one entry; Today's and the Activities page's load for that day are unchanged. Undo the merge: two entries come back and both originals are intact. Keep separate, then "Ask me again".
+20. Garmin + Strava copy of the same activity: after merging, Today's daily load and the weekly AI summary count it once.
+21. Progress: the totals match `select count(*) from strength_sessions where deleted_at is null and status = 'completed'`, including after a large Hevy import.
+22. Export: download a routine `.fit`, copy it to the Forerunner 965 (`GARMIN/NewFiles` over USB), and check Training → Workouts on the watch. Record the result here. Until then it stays "experimental". Also import the `.ics` into Google Calendar.
+23. Mobile at 360 px width: touch targets, sticky header, the rest bar and the Ask APEX button must not cover the inputs.
