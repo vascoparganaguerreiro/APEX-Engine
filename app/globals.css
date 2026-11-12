@@ -356,10 +356,10 @@ select{background:var(--card2);color:var(--text);border:1px solid var(--line);bo
 @media (max-width:800px){
   :root{--bnav-h:calc(60px + env(safe-area-inset-bottom))}
   .side{display:none}
-  .main{padding-bottom:calc(var(--bnav-h) + 96px)}
+  .main{padding-bottom:calc(var(--bnav-h) + 96px + var(--rest-h,0px))}
   /* floating elements sit above the bar instead of under it */
   .restbar{bottom:var(--bnav-h);padding-bottom:10px}
-  .fab{bottom:calc(var(--bnav-h) + 84px)}   /* above the global quick-actions button */
+  .fab{bottom:calc(var(--bnav-h) + 84px + var(--rest-h,0px))}   /* above the global quick-actions button */
   .td-quickbtn{bottom:calc(var(--bnav-h) + 18px)}
   .bnav{--cyan:#38d4d0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));position:fixed;left:0;right:0;bottom:0;z-index:35;height:var(--bnav-h);
     padding:0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);background:rgba(10,14,19,.94);border-top:1px solid var(--line);
@@ -418,7 +418,7 @@ select{background:var(--card2);color:var(--text);border:1px solid var(--line);bo
 .sug-strip{display:none}
 @media (max-width:800px){
   .omni-bg{align-items:flex-end}
-  .omni-fab{display:grid;place-items:center;position:fixed;right:16px;bottom:calc(var(--bnav-h) + 16px + var(--composer-h,0px));z-index:32;width:54px;height:54px;border-radius:50%;border:1px solid rgba(56,212,208,.45);background:#0f1a24;color:#38d4d0;box-shadow:0 8px 22px rgba(0,0,0,.5);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s ease,background-color .15s ease}
+  .omni-fab{display:grid;place-items:center;position:fixed;right:16px;bottom:calc(var(--bnav-h) + 16px + var(--composer-h,0px) + var(--rest-h,0px));z-index:32;width:54px;height:54px;border-radius:50%;border:1px solid rgba(56,212,208,.45);background:#0f1a24;color:#38d4d0;box-shadow:0 8px 22px rgba(0,0,0,.5);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s ease,background-color .15s ease}
   .omni-fab:active{transform:scale(.94);background:#13202b}
   .omni-fab:focus-visible{outline:2px solid #38d4d0;outline-offset:3px}
   /* a text field has focus: release the bar space and hide floating buttons so nothing sits on or above the keyboard */
@@ -450,3 +450,5 @@ select{background:var(--card2);color:var(--text);border:1px solid var(--line);bo
   .sug-inline{display:none}
 }
 @media (prefers-reduced-motion:reduce){.omni-bg,.omni-palette,.omni-sheet{animation:none}.omni-fab,.omni-row,.omni-side,.coachctx-head svg{transition:none}}
+/* desktop: the Strength rest bar sits beside the sidebar (240px), not over its Sign out button */
+@media (min-width:801px){.restbar{left:240px}}
