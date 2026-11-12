@@ -128,7 +128,7 @@ export default function ProfilePage() {
           <p className="muted small" style={{ marginTop: 0 }}>Basic details about you. Everything here is optional.</p>
           <div className="formgrid">
             <label>Display name<input value={draft.display_name} maxLength={60} onChange={text("display_name")} placeholder="optional" /></label>
-            <label>Date of birth{age !== null && <small>{age} years old</small>}<input type="date" value={draft.birth_date} max={today} onChange={text("birth_date")} disabled={locked} /></label>
+            <label>Date of birth{age !== null && <small>{age} years old</small>}<input type="date" value={draft.birth_date} max={today} onChange={text("birth_date")} disabled={locked} aria-describedby={locked ? "dob-locked" : undefined} />{locked && <small id="dob-locked" className="field-hint">Not available until profile setup is completed.</small>}</label>
             {imperial ? (
               <label>Height (ft / in)<span className="row"><input inputMode="numeric" value={draft.height_ft} onChange={valueField("height_ft", "height_cm")} placeholder="ft" style={{ width: "50%" }} /><input inputMode="decimal" value={draft.height_in} onChange={valueField("height_in", "height_cm")} placeholder="in" style={{ width: "50%" }} /></span>{sourceSel("height_cm")}</label>
             ) : (
