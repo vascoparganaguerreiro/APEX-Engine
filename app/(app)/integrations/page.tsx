@@ -4,6 +4,8 @@ import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
 import { disconnectProvider, integrationConfig, saveProviderSettings, startConnection, syncProvider } from "@/lib/api";
 import IntervalsCard from "@/components/IntervalsCard";
+import Disclosure from "@/components/ui/Disclosure";
+import { needsAttention } from "@/lib/disclosure";
 import { CATEGORY_LABEL, PROVIDERS, STATUS_LABEL, cardState, type ProviderInfo, type UserIntegrationState } from "@/lib/integrations/providers";
 import { freshness } from "@/lib/integrations/normalize";
 import { loadSnapshot, type DirectConn, type IntegrationSnapshot } from "@/lib/integrations/status";
@@ -97,6 +99,17 @@ export default function IntegrationsPage() {
         </div>
       )}
 
+      <nav className="conn-glance" aria-label="Connection status overview">
+        {PROVIDERS.map((p) => {
+          const c = cardState(p, state), d = direct(p.id), attn = needsAttention(d?.status, d?.last_error);
+          return (
+            <a key={p.id} href={`#conn-${p.id}`} className={`conn-chip st-${c.status}${attn ? " attn" : ""}`}>
+              <span className="conn-dot" aria-hidden="true" /><b>{p.name}</b><small>{STATUS_LABEL[c.status]}{attn ? " · needs attention" : ""}</small>
+            </a>
+          );
+        })}
+      </nav>
+
       {PROVIDERS.map((p) => {
         const c = cardState(p, state), d = direct(p.id);
         const cats = p.id === "intervals" ? p.direct : c.status === "connected" ? p.direct : p.viaIntervals.length ? p.viaIntervals : p.direct;
@@ -104,16 +117,15 @@ export default function IntegrationsPage() {
         const latest = p.id === "intervals" ? snap.latestDaily : snap.latestByProvider[p.id] ?? null;
         const fresh = c.status === "connected" ? freshness(latest, new Date()) : null;
         return (
-          <section key={p.id} className="card psec">
+          <section key={p.id} id={`conn-${p.id}`} className="card psec conn">
             <div className="act-head">
               <h2 style={{ margin: 0 }}>{p.name}</h2>
               <span className={STATUS_CLASS[c.status]}>{STATUS_LABEL[c.status]}</span>
               <span className="muted small">{c.directLabel}</span>
+              {c.status === "connected" && <span className="muted small">Last sync {when(last)}</span>}
             </div>
             {c.note && <p className="muted small">{c.note}</p>}
             {c.seenInData && c.status !== "connected" && <p className="muted small">Activities from {p.name} were found in your data.</p>}
-            {cats.length > 0 && <p className="small" style={{ margin: "6px 0" }}><span className="muted">Data APEX can receive: </span>{cats.map((k) => CATEGORY_LABEL[k]).join(", ")}</p>}
-            <p className="muted small" style={{ margin: "6px 0" }}><b>Permissions:</b> {p.permissions} <b>Limits:</b> {p.limits}</p>
             {c.status === "connected" && (
               <div className="metrics">
                 <div><small>Last successful sync</small><b>{when(last)}</b></div>
@@ -143,13 +155,19 @@ export default function IntegrationsPage() {
             </div>
             {p.id === "intervals" && <IntervalsCard embedded onChange={() => { void load(); }} />}
             {p.id === "whoop" && c.status === "connected" && d && (
+              <Disclosure title="Sync settings" summary={`${[d.settings.fill_daily, d.settings.import_workouts].filter(Boolean).length} of 2 on`}>
               <div style={{ marginTop: 10 }}>
                 <label className="row small"><input type="checkbox" checked={!!d.settings.fill_daily} disabled={busy !== null} onChange={(e) => setting("fill_daily", e.target.checked)} />
                   Use WHOOP HRV, resting heart rate and sleep for days that have no value yet (your own entries and other sources are never replaced)</label>
                 <label className="row small"><input type="checkbox" checked={!!d.settings.import_workouts} disabled={busy !== null} onChange={(e) => setting("import_workouts", e.target.checked)} />
                   Add WHOOP workouts to Activities (leave off if your watch already records them; duplicates can be merged under Strength → Duplicates)</label>
               </div>
+              </Disclosure>
             )}
+            <Disclosure title="Data, permissions and limits" summary="What this connection can and cannot provide">
+            {cats.length > 0 && <p className="small" style={{ margin: "6px 0" }}><span className="muted">Data APEX can receive: </span>{cats.map((k) => CATEGORY_LABEL[k]).join(", ")}</p>}
+            <p className="muted small" style={{ margin: "6px 0" }}><b>Permissions:</b> {p.permissions} <b>Limits:</b> {p.limits}</p>
+            </Disclosure>
           </section>
         );
       })}

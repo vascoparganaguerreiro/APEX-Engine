@@ -86,7 +86,8 @@ test("a failed request uses LoadProblem: an alert with a retry, never the empty-
 });
 
 test("CSS: restrained dashed card, cyan icon, 44px targets, focus ring, stacked on phones, compact variant inside cards", () => {
-  const css = read("app/globals.css"), b = css.slice(css.indexOf("/* educational empty states"));
+  const css = read("app/globals.css"), from = css.indexOf("/* educational empty states"), to = css.indexOf("/* progressive disclosure", from);
+  const b = css.slice(from, to === -1 ? undefined : to);   // only this block: later blocks (disclosure) have their own transitions
   assert.match(b, /\.empty\{display:flex;[^}]*border:1px dashed/); assert.match(b, /\.empty-ic\{[^}]*color:#38d4d0/);
   assert.match(b, /\.empty \.btn\{[^}]*min-height:44px/); assert.match(b, /\.empty \.btn:focus-visible,\.empty-link:focus-visible\{outline:2px solid #38d4d0/);
   assert.match(b, /@media \(max-width:520px\)\{\.empty\{flex-direction:column/); assert.match(b, /\.empty\.compact\{display:block;margin:0;padding:0;border:0;background:none/);

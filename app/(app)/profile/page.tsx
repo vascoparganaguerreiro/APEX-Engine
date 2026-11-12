@@ -11,6 +11,8 @@ import {
 } from "@/lib/profile";
 import GarminDeviceCard from "@/components/strength/GarminDeviceCard";
 import ChangePasswordCard from "@/components/ChangePasswordCard";
+import Disclosure from "@/components/ui/Disclosure";
+import { countSet, setSummary } from "@/lib/disclosure";
 
 const errMsg = (e: unknown) => friendlyMessage(e, "Your profile could not be saved", { scope: "profile.page" });
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "never");
@@ -27,6 +29,7 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showAll, setShowAll] = useState(false);   // a failed save opens every collapsed section, so the field that failed is never hidden
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -67,11 +70,11 @@ export default function ProfilePage() {
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!state || !draft || !session || !result) return;
-    if (result.error) { setError(result.error); setOk(null); return; }
+    if (result.error) { setError(result.error); setOk(null); setShowAll(true); return; }
     if (Object.keys(result.patch).length === 0) { setError(null); setOk("Nothing to save: no field was changed."); return; }
     setSaving(true); setError(null); setOk(null);
     try { await saveProfile(getSupabase(), session.user.id, result.patch, state.exists, { timezone: draft.timezone.trim(), units: draft.units }); await load(); setOk("Profile saved."); }
-    catch (x) { setError(errMsg(x)); } finally { setSaving(false); }
+    catch (x) { setError(errMsg(x)); setShowAll(true); } finally { setSaving(false); }
   }
 
   if (!state || !draft) {
@@ -102,6 +105,10 @@ export default function ProfilePage() {
     <small className="muted">Latest daily {m.label}: <b>{m.value}</b> on {m.day} ({m.source === "unknown" ? "source unknown" : SOURCE_LABEL[m.source]}){" "}
       {m.source !== "unknown" && <button type="button" className="linkbtn" onClick={() => applyMeasured(f, m)} disabled={locked}>Use as baseline</button>}</small>
   );
+  // What is inside each collapsed section, in its summary line. Counts come only from what is in the form.
+  const moreSet = countSet([draft.body_fat, draft.preferred_sports, draft.primary_goal, draft.goal_notes]);
+  const advSet = countSet([draft.vo2max, draft.lthr, draft.threshold_pace, draft.experience_level]);
+  const servicesSummary = !integrations ? "Loading..." : `Intervals.icu ${integrations.intervals.connected ? "connected" : "not connected"}`;
   return (
     <>
       <div className="eyebrow">Account</div>
@@ -111,9 +118,14 @@ export default function ProfilePage() {
       {ok && <div className="notice ok">{ok}</div>}
       {locked && <div className="notice">The extra profile fields aren&apos;t set up on your account yet. Name, units, time zone, body measurements, max heart rate, FTP and sleep goal still work.</div>}
 
-      <form onSubmit={save}>
-        <section className="card psec">
-          <h2>Personal information</h2>
+      <nav className="prof-jump" aria-label="Profile sections">
+        <a href="#profile-personal">Personal</a><a href="#profile-physiology">Physiology</a><a href="#profile-account">Account</a>
+      </nav>
+
+      <form id="profile-form" onSubmit={save}>
+        <section id="profile-personal" className="card psec" aria-labelledby="profile-personal-h">
+          <h2 id="profile-personal-h">Personal</h2>
+          <p className="muted small" style={{ marginTop: 0 }}>Basic details about you. Everything here is optional.</p>
           <div className="formgrid">
             <label>Display name<input value={draft.display_name} maxLength={60} onChange={text("display_name")} placeholder="optional" /></label>
             <label>Date of birth{age !== null && <small>{age} years old</small>}<input type="date" value={draft.birth_date} max={today} onChange={text("birth_date")} disabled={locked} /></label>
@@ -123,8 +135,11 @@ export default function ProfilePage() {
               <label>Height (cm)<input inputMode="decimal" value={draft.height_cm} onChange={valueField("height_cm", "height_cm")} placeholder="optional" />{sourceSel("height_cm")}</label>
             )}
             <label>Body weight ({imperial ? "lb" : "kg"})<input inputMode="decimal" value={draft.weight} onChange={valueField("weight", "weight_kg")} placeholder="optional" />{sourceSel("weight_kg")}</label>
-            <label>Body fat (%)<input inputMode="decimal" value={draft.body_fat} onChange={valueField("body_fat", "body_fat_pct")} placeholder="optional" disabled={locked} />{sourceSel("body_fat_pct")}</label>
           </div>
+          <Disclosure title="More about you" summary={setSummary(moreSet, 4)} forceOpen={showAll}>
+            <div className="formgrid">
+            <label>Body fat (%)<input inputMode="decimal" value={draft.body_fat} onChange={valueField("body_fat", "body_fat_pct")} placeholder="optional" disabled={locked} />{sourceSel("body_fat_pct")}</label>
+            </div>
           <div style={{ marginTop: 6 }}>
             <small className="muted">Preferred sports</small>
             <div className="row" role="group" aria-label="Preferred sports" style={{ marginTop: 6 }}>
@@ -139,42 +154,44 @@ export default function ProfilePage() {
             <label>Primary training goal<select value={draft.primary_goal} onChange={text("primary_goal")} disabled={locked}><option value="">Not set</option>{GOALS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}</select></label>
             <label>Goal notes<input value={draft.goal_notes} maxLength={500} onChange={text("goal_notes")} placeholder="optional" disabled={locked} /></label>
           </div>
+          </Disclosure>
         </section>
 
-        <section className="card psec">
-          <h2>Physiological profile</h2>
+        <section id="profile-physiology" className="card psec" aria-labelledby="profile-physiology-h">
+          <h2 id="profile-physiology-h">Physiology</h2>
           <p className="muted small" style={{ marginTop: 0 }}>These are baselines you set or confirm. Each value shows where it came from. Nothing is estimated for you, and imported values are only used when you choose &quot;Use as baseline&quot;.</p>
           <div className="formgrid">
             <label>Resting heart rate baseline (bpm)<input inputMode="numeric" value={draft.resting_hr} onChange={valueField("resting_hr", "resting_hr")} placeholder="optional" disabled={locked} />{sourceSel("resting_hr")}{suggest("resting_hr", measured.resting_hr)}</label>
             <label>Maximum heart rate (bpm)<input inputMode="numeric" value={draft.max_hr} onChange={valueField("max_hr", "max_hr")} placeholder="optional" />{sourceSel("max_hr")}</label>
+            <label>FTP / threshold power (W)<input inputMode="numeric" value={draft.ftp_watts} onChange={valueField("ftp_watts", "ftp_watts")} placeholder="optional" />{sourceSel("ftp_watts")}</label>
+            <label>Sleep goal (hours)<input inputMode="decimal" value={draft.sleep_goal_h} onChange={text("sleep_goal_h")} /></label>
+          </div>
+          <Disclosure title="Advanced physiology" summary={setSummary(advSet, 4)} forceOpen={showAll}>
+            <div className="formgrid">
             <label>VO2 max (ml/kg/min)<input inputMode="decimal" value={draft.vo2max} onChange={valueField("vo2max", "vo2max")} placeholder="optional" disabled={locked} />{sourceSel("vo2max")}{suggest("vo2max", measured.vo2max)}</label>
             <label>Lactate threshold heart rate (bpm)<input inputMode="numeric" value={draft.lthr} onChange={valueField("lthr", "lthr")} placeholder="optional" disabled={locked} />{sourceSel("lthr")}</label>
             <label>Threshold pace (min per {imperial ? "mile" : "km"})<input value={draft.threshold_pace} onChange={valueField("threshold_pace", "threshold_pace_s_per_km")} placeholder="m:ss, optional" disabled={locked} />{sourceSel("threshold_pace_s_per_km")}</label>
-            <label>FTP / threshold power (W)<input inputMode="numeric" value={draft.ftp_watts} onChange={valueField("ftp_watts", "ftp_watts")} placeholder="optional" />{sourceSel("ftp_watts")}</label>
             <label>Training experience<select value={draft.experience_level} onChange={text("experience_level")} disabled={locked}><option value="">Not set</option>{EXPERIENCE.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
-          </div>
+            </div>
+          </Disclosure>
         </section>
-
-        <section className="card psec">
-          <h2>Training preferences</h2>
-          <div className="formgrid">
-            <label>Units<select value={draft.units} onChange={changeUnits}><option value="metric">Metric (km, kg, cm)</option><option value="imperial">Imperial (mi, lb, ft/in)</option></select></label>
-            <label>Time zone<input list="tzlist" value={draft.timezone} onChange={text("timezone")} /><datalist id="tzlist">{zones().map((z) => <option key={z} value={z} />)}</datalist>
-              {draft.timezone !== deviceTz() && <button type="button" className="linkbtn" onClick={() => edit({ timezone: deviceTz() })}>Use this device&apos;s time zone ({deviceTz()})</button>}</label>
-            <label>Sleep goal (hours)<input inputMode="decimal" value={draft.sleep_goal_h} onChange={text("sleep_goal_h")} /></label>
-          </div>
-          <p className="muted small" style={{ marginBottom: 0 }}>Notifications are not available yet, so there is nothing to configure. Units apply to this page; races and other modules keep the units you enter there.</p>
-        </section>
-
-        <div className="row savebar">
-          <button className="btn" type="submit" disabled={saving || !dirty}>{saving ? "Saving..." : "Save changes"}</button>
-          <span className="muted small">{dirty ? "You have unsaved changes." : "All changes saved."}</span>
-          {dirty && <button className="btn ghost" type="button" onClick={() => { setDraft(draftFromProfile(state.profile)); setError(null); setOk(null); }}>Discard</button>}
-        </div>
       </form>
 
-      <section className="card psec">
-        <h2>Integrations</h2>
+      <section id="profile-account" className="card psec" aria-labelledby="profile-account-h">
+        <h2 id="profile-account-h">Account</h2>
+        <div className="metrics">
+          <div><small>Email</small><b style={{ fontSize: 15, wordBreak: "break-all" }}>{session?.user.email ?? "n/a"}</b></div>
+          <div><small>Member since</small><b>{session?.user.created_at ? new Date(session.user.created_at).toLocaleDateString() : "n/a"}</b></div>
+        </div>
+        <p className="muted small" style={{ marginBottom: 0 }}>Your profile is private: only you can read or change it.</p>
+        <h3 className="prof-sub">Preferences</h3>
+        <div className="formgrid">
+            <label>Units<select form="profile-form" value={draft.units} onChange={changeUnits}><option value="metric">Metric (km, kg, cm)</option><option value="imperial">Imperial (mi, lb, ft/in)</option></select></label>
+            <label>Time zone<input form="profile-form" list="tzlist" value={draft.timezone} onChange={text("timezone")} /><datalist id="tzlist">{zones().map((z) => <option key={z} value={z} />)}</datalist>
+              {draft.timezone !== deviceTz() && <button type="button" className="linkbtn" onClick={() => edit({ timezone: deviceTz() })}>Use this device&apos;s time zone ({deviceTz()})</button>}</label>
+        </div>
+          <p className="muted small" style={{ marginBottom: 0 }}>Notifications are not available yet, so there is nothing to configure. Units apply to this page; races and other modules keep the units you enter there.</p>
+        <Disclosure title="Connected services" summary={servicesSummary}>
         {!integrations ? <p className="muted small">Loading...</p> : (
           <div className="intlist">
             <div className="doserow"><b>Intervals.icu</b>
@@ -193,19 +210,20 @@ export default function ProfilePage() {
         )}
         <p className="muted small" style={{ marginBottom: 0 }}>Connection details are shown without any credentials. Keys are stored encrypted on the server and never sent to this page.{" "}
           <Link href="/integrations" style={{ color: "var(--green)" }}>Open the Connectivity Centre</Link> for WHOOP, Garmin, COROS, Polar, Suunto, Oura, Apple Health, Samsung Health and Strava.</p>
-      </section>
-
-      {session && <GarminDeviceCard uid={session.user.id} intervals={integrations ? integrations.intervals : null} />}
-
-      <section className="card psec">
-        <h2>Account</h2>
-        <div className="metrics">
-          <div><small>Email</small><b style={{ fontSize: 15, wordBreak: "break-all" }}>{session?.user.email ?? "n/a"}</b></div>
-          <div><small>Member since</small><b>{session?.user.created_at ? new Date(session.user.created_at).toLocaleDateString() : "n/a"}</b></div>
-        </div>
-        <p className="muted small" style={{ marginBottom: 0 }}>Your profile is private: only you can read or change it.</p>
+        </Disclosure>
+        {session && (
+          <Disclosure title="Wearable device and exports" summary="Garmin, workout export">
+            <GarminDeviceCard uid={session.user.id} intervals={integrations ? integrations.intervals : null} />
+          </Disclosure>
+        )}
         <ChangePasswordCard email={session?.user.email} />
       </section>
+
+        <div className="row savebar">
+          <button className="btn" type="submit" form="profile-form" disabled={saving || !dirty}>{saving ? "Saving..." : "Save changes"}</button>
+          <span className="muted small">{dirty ? "You have unsaved changes." : "All changes saved."}</span>
+          {dirty && <button className="btn ghost" type="button" onClick={() => { setDraft(draftFromProfile(state.profile)); setError(null); setOk(null); }}>Discard</button>}
+        </div>
     </>
   );
 }
