@@ -377,7 +377,8 @@ test("Intervals sync without migration 14 (and 13) works exactly as before", asy
   assert.equal(r.statusTracked, false); assert.equal(r.activities, 1);
   const a = user.rows("activities")[0];
   assert.equal(a.origin, undefined, "fallback upsert without provenance columns"); assert.equal(a.source, "intervals");
-  assert.match(r.notes.join(" "), /migration 14/);
+  assert.match(r.notes.join(" "), /connection support set up/);
+  assert.ok(!/migration|\.sql/i.test(r.notes.join(" ")), "no migration number or file name is shown");
 });
 
 test("Intervals sync failure is recorded without advancing the cursor; bad credentials need reconnecting", async () => {

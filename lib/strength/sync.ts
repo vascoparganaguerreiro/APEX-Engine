@@ -230,7 +230,7 @@ export class SyncEngine {
       } catch (e) {
         batch.forEach((q) => this.inflight.delete(q.op_id));
         const kind = e instanceof TransportError ? e.kind : "offline";
-        const msg = kind === "not_set_up" ? "Saved on this device. The Strength Hub database is not set up yet (migration 13), so nothing is uploaded."
+        const msg = kind === "not_set_up" ? "Saved on this device. Cloud saving isn't set up for your account yet, so nothing is uploaded."
           : kind === "auth" ? "Saved on this device. Sign in again to upload." : kind === "server" ? "Saved on this device. The server had a problem; it will retry." : "Saved on this device. It will upload when you are back online.";
         this.refresh(kind === "server" ? "error" : kind, msg);
         return this.st;

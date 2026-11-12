@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { friendlyMessage } from "@/lib/userError";
 import { validateResult, type ResultInput } from "@/lib/health/core";
 
 export interface ResultDraft extends ResultInput { flag: string | null }
@@ -24,7 +25,7 @@ export default function ResultForm({ initial, submitLabel, onSubmit, onCancel }:
     const v = validateResult(draft);
     if (v) { setErr(v); return; }
     setErr(null); setBusy(true);
-    try { await onSubmit(draft); if (!initial) setF(blank); } catch (x) { setErr(x instanceof Error ? x.message : String(x)); } finally { setBusy(false); }
+    try { await onSubmit(draft); if (!initial) setF(blank); } catch (x) { setErr(friendlyMessage(x, "The result could not be saved", { scope: "health.result" })); } finally { setBusy(false); }
   }
 
   return (

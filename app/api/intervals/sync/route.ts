@@ -1,4 +1,5 @@
 import { IntervalsError } from "@/lib/intervals";
+import { safeText } from "@/lib/userError";
 import { authUser, errorResponse } from "@/lib/serverAuth";
 import { getConnection, markSynced } from "@/lib/serverConnections";
 import { adminClient, cryptoOps, integrationError } from "@/lib/integrations/server";
@@ -39,7 +40,7 @@ export async function POST(req: Request): Promise<Response> {
     if (e instanceof SyncBusy || e instanceof SyncDeferred) { const x = integrationError(e); return Response.json({ error: x.message }, { status: x.status }); }
     if (e instanceof Error && typeof (e as { status?: unknown }).status === "number" && !(e instanceof IntervalsError)) {
       const s = (e as unknown as { status: number }).status;
-      return Response.json({ error: s < 600 ? e.message : "Unexpected error." }, { status: s });
+      return Response.json({ error: s < 600 ? safeText(e.message, "Unexpected error.") : "Unexpected error." }, { status: s });
     }
     return errorResponse(e, "intervals sync failed");
   }

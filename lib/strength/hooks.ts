@@ -2,6 +2,7 @@
 // React hooks shared by the Strength Hub pages. Reads run as the signed-in user (RLS). A missing migration is surfaced as setUp=false.
 import { useCallback, useEffect, useState } from "react";
 import { getSupabase } from "../supabase";
+import { friendlyMessage } from "../userError.ts";
 import { CATALOG, resolveExercise } from "./library.ts";
 import { NotSetUp, loadCustom, loadHistory, listRoutines, type Db } from "./data.ts";
 import type { HSession } from "./analytics.ts";
@@ -9,7 +10,7 @@ import type { Routine } from "./routines.ts";
 import type { Exercise } from "./types.ts";
 
 export const sdb = () => getSupabase() as unknown as Db;
-export const errText = (e: unknown) => (e instanceof Error ? e.message : typeof e === "object" && e && "message" in e ? String((e as { message: unknown }).message) : String(e));
+export const errText = (e: unknown) => friendlyMessage(e, "That could not be completed", { scope: "strength" });
 
 /** Catalog + the user's custom exercises. Works offline with the bundled catalog. */
 export function useLibrary() {

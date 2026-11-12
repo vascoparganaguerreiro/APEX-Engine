@@ -23,7 +23,7 @@ test("a profile row loads, and missing data stays missing (nothing is invented)"
   const p = base();
   assert.deepEqual([p.display_name, p.weight_kg, p.height_cm, p.sleep_goal_h, p.resting_hr, p.vo2max, p.lthr], ["Ana", 70.35, 180.3, 8, 50, null, null]);
   const empty = profileFromRow(null, "u2", "Europe/Paris");
-  assert.deepEqual([empty.display_name, empty.timezone, empty.units, empty.sleep_goal_h, empty.weight_kg, empty.max_hr, empty.resting_hr, empty.vo2max, empty.birth_date], [null, "Europe/Paris", "metric", 8, null, null, null, null, null]);
+  assert.deepEqual([empty.display_name, empty.timezone, empty.units, empty.sleep_goal_h, empty.weight_kg, empty.max_hr, empty.resting_hr, empty.vo2max, empty.birth_date], [null, "Europe/Paris", "metric", null, null, null, null, null, null], "no sleep goal is invented when none is stored");
   assert.deepEqual(empty.preferred_sports, []);
   assert.deepEqual(empty.field_sources, {});
   const old = profileFromRow({ id: "u3", display_name: "Old", timezone: "UTC", units: "imperial", weight_kg: 80, height_cm: 170, max_hr: 180, ftp_watts: 200, sleep_goal_h: 7.5 }, "u3");
@@ -114,7 +114,7 @@ test("validation rejects unrealistic or inconsistent values with a clear message
     [{ height_cm: "30" }, /Height/], [{ height_cm: "abc" }, /Height/], [{ weight: "5" }, /Weight/], [{ body_fat: "70" }, /Body fat/],
     [{ resting_hr: "10" }, /Resting heart rate/], [{ resting_hr: "50.5" }, /whole/], [{ max_hr: "300" }, /Maximum heart rate/],
     [{ resting_hr: "120", max_hr: "110" }, /lower than maximum/], [{ lthr: "200" }, /cannot be above maximum/], [{ vo2max: "5" }, /VO2/],
-    [{ threshold_pace: "4.35" }, /Threshold pace/], [{ threshold_pace: "0:30" }, /realistic/], [{ ftp_watts: "5000" }, /FTP/], [{ sleep_goal_h: "0" }, /Sleep goal/], [{ sleep_goal_h: "" }, /required/],
+    [{ threshold_pace: "4.35" }, /Threshold pace/], [{ threshold_pace: "0:30" }, /realistic/], [{ ftp_watts: "5000" }, /FTP/], [{ sleep_goal_h: "0" }, /Sleep goal/], [{ sleep_goal_h: "" }, /cannot be removed/],
     [{ birth_date: "2030-01-01" }, /future/], [{ birth_date: "2024-01-01" }, /looks wrong/], [{ birth_date: "1990-02-30" }, /valid date/],
     [{ timezone: "Mars/Base" }, /time zone/], [{ units: "stone" as never }, /units/], [{ display_name: "x".repeat(61) }, /Display name/],
     [{ goal_notes: "x".repeat(501) }, /Goal notes/], [{ preferred_sports: ["chess"] }, /Preferred sports/], [{ preferred_sports: ["running", "running"] }, /Preferred sports/],
@@ -139,7 +139,7 @@ function fakeSupabase(migrated = true) {
       let op = "select"; let payload: Record<string, unknown> = {}; let cols = ""; const filters: Array<[string, unknown]> = [];
       const visible = () => rows.filter((r) => r.id === uid && filters.every(([c, v]) => r[c] === v));
       const run = async (): Promise<{ data: unknown; error: { message: string } | null }> => {
-        if (!migrated && (NEW.some((k) => cols.includes(k)) || NEW.some((k) => k in payload))) return { data: null, error: { message: "column does not exist" } };
+        if (!migrated) { const miss = NEW.find((k) => cols.includes(k) || k in payload); if (miss) return { data: null, error: { code: "42703", message: `column profiles.${miss} does not exist` } }; }
         if (op === "insert") {
           if (payload.id !== uid) return { data: null, error: { message: "new row violates row-level security policy" } };
           if (rows.some((r) => r.id === payload.id)) return { data: null, error: { message: "duplicate key" } };
@@ -186,7 +186,7 @@ test("a user without a profile row gets one created, and only for their own id",
   const patch = buildProfilePatch(profile, { ...draftFromProfile(profile), display_name: "Carol" }, NOW, TODAY).patch;
   await saveProfile(db, "carol", patch, exists);
   assert.deepEqual([rows.find((r) => r.id === "carol")!.display_name, sent.at(-1)!.payload.id], ["Carol", "carol"]);
-  await assert.rejects(saveProfile(asUser("mallory"), "carol", { display_name: "hacked" }, false), /row-level security/, "cannot create a row for someone else");
+  await assert.rejects(saveProfile(asUser("mallory"), "carol", { display_name: "hacked" }, false), /not allowed to create/, "cannot create a row for someone else");
 });
 
 test("users cannot read or change each other's profiles", async () => {
@@ -209,7 +209,8 @@ test("before migration 11 the profile still loads and saves the original fields"
   assert.equal(migrated, false);
   assert.equal(profile.display_name, "Ana");
   const blocked = buildProfilePatch(profile, { ...draftFromProfile(profile), resting_hr: "47" }, NOW, TODAY, false);
-  assert.match(blocked.error ?? "", /migration 11/);
+  assert.match(blocked.error ?? "", /aren't set up on your account yet/);
+  assert.ok(!/migration|\.sql/i.test(blocked.error ?? ""), "no migration number is shown");
   const fine = buildProfilePatch(profile, { ...draftFromProfile(profile), display_name: "Ana Z", max_hr: "192" }, NOW, TODAY, false);
   assert.equal(fine.error, undefined);
   assert.deepEqual(Object.keys(fine.patch).sort(), ["display_name", "max_hr"]);
@@ -266,4 +267,165 @@ test("navigation and cross-module wiring", () => {
   assert.match(read("app/(app)/today/page.tsx"), /loadProfileLite\(\)/);
   assert.match(read("app/(app)/races/page.tsx"), /select\("units"\)/);
   assert.match(read("components/races/RaceForm.tsx"), /initial\?\.distance_unit \?\? defaultUnit \?\? "km"/);
+});
+// ------------------------------------------------------------------ Phase 1 fixes: precise migration detection, real errors, sleep goal, sources, first save
+import { AUTO_SOURCES, ProfileError, classifyProfileError, editValue, isMissingProfileColumn, sourceAfterEdit, NEW_KEYS } from "../lib/profile.ts";
+
+/** A db whose profile read fails with the given error (and, optionally, whose base-column read then works). */
+function failingDb(err: unknown, o: { baseOk?: boolean; baseErr?: unknown } = {}): Db & { selects: string[] } {
+  const selects: string[] = [];
+  return {
+    selects,
+    from() {
+      let cols = "";
+      const run = async () => {
+        selects.push(cols);
+        const full = cols.includes("field_sources");
+        if (full) return { data: null, error: err };
+        if (o.baseErr) return { data: null, error: o.baseErr };
+        return { data: { id: "u1", display_name: "Ana", timezone: "UTC", units: "metric", weight_kg: 70, height_cm: 180, max_hr: 190, ftp_watts: null, sleep_goal_h: null }, error: null };
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const b: any = { select(c: string) { cols = c; return b; }, eq() { return b; }, maybeSingle() { return run(); } };
+      return b;
+    },
+  } as Db & { selects: string[] };
+}
+
+test("migration 11 detection: only a missing migration-11 column (42703 / PGRST204) is a missing migration", async () => {
+  assert.equal(isMissingProfileColumn({ code: "42703", message: "column profiles.birth_date does not exist" }), true);
+  assert.equal(isMissingProfileColumn({ code: "42703", message: 'column "field_sources" does not exist' }), true);
+  assert.equal(isMissingProfileColumn({ code: "PGRST204", message: "Could not find the 'resting_hr' column of 'profiles' in the schema cache" }), true);
+  for (const k of NEW_KEYS) assert.equal(isMissingProfileColumn({ code: "42703", message: `column profiles.${k} does not exist` }), true, k);
+  for (const e of [
+    { code: "42703", message: "column profiles.display_name does not exist" },       // a missing ORIGINAL column is not migration 11
+    { code: "42703", message: "column profiles.birth_date_x does not exist" },
+    { code: "42501", message: "permission denied for table profiles" }, { code: "PGRST301", message: "JWT expired" }, { code: "", message: "TypeError: fetch failed" },
+    { code: "57014", message: "canceling statement due to statement timeout" }, { code: "42P01", message: 'relation "public.profiles" does not exist' },
+    { message: "column profiles.birth_date does not exist" }, "column birth_date does not exist", null, undefined,
+  ]) assert.equal(isMissingProfileColumn(e), false, JSON.stringify(e));
+  // the fallback runs for the real thing, once, and keeps the original fields
+  const missing = failingDb({ code: "42703", message: "column profiles.birth_date does not exist" });
+  const r = await loadProfile(missing, "u1");
+  assert.deepEqual([r.migrated, r.exists, r.profile.display_name, r.profile.sleep_goal_h], [false, true, "Ana", null]);
+  assert.equal(missing.selects.length, 2);
+});
+
+test("real errors are reported with a clear message and never labelled as a missing migration; no fallback query is made", async () => {
+  const cases: Array<[unknown, string, boolean]> = [
+    [{ message: "TypeError: fetch failed", code: "" }, "network", true], [{ message: "Failed to fetch" }, "network", true], [{ name: "TimeoutError", message: "x" }, "network", true], [{ status: 0, message: "" }, "network", true],
+    [{ code: "PGRST301", message: "JWT expired" }, "auth", false], [{ status: 401, message: "Unauthorized" }, "auth", false], [{ code: "PGRST303", message: "JWT issued at future" }, "auth", false],
+    [{ code: "42501", message: "permission denied for table profiles" }, "permission", false], [{ status: 403, message: "forbidden" }, "permission", false],
+    [{ code: "XX000", message: "internal error" }, "other", true], [{ code: "57014", message: "canceling statement due to statement timeout" }, "other", true],
+  ];
+  for (const [err, kind, retryable] of cases) {
+    const db = failingDb(err);
+    const e = await loadProfile(db, "u1").then(() => null, (x) => x as ProfileError);
+    assert.ok(e instanceof ProfileError, JSON.stringify(err));
+    assert.equal(e.kind, kind, JSON.stringify(err)); assert.equal(e.retryable, retryable);
+    assert.ok(!/migration/i.test(e.message), "never mislabelled as a migration problem");
+    assert.ok(!/SELECT|relation|column|jwt|TypeError|42501|PGRST/i.test(e.message), "no raw database text is shown");
+    assert.equal(db.selects.length, 1, "no fallback to the original columns");
+  }
+  // if the original-column read also fails, that is reported too
+  const both = failingDb({ code: "42703", message: "column profiles.birth_date does not exist" }, { baseErr: { code: "42501", message: "permission denied" } });
+  assert.equal(await loadProfile(both, "u1").then(() => "ok", (x) => (x as ProfileError).kind), "permission");
+  assert.match(classifyProfileError({ message: "x" }, "save").message, /could not be saved/);
+});
+
+test("the sleep goal is never invented: no stored value stays empty, saving other fields does not write one, a stored goal cannot be blanked", () => {
+  const none = profileFromRow({ id: "u9", display_name: "N", timezone: "UTC", units: "metric" }, "u9");
+  assert.equal(none.sleep_goal_h, null); assert.equal(draftFromProfile(none).sleep_goal_h, "");
+  assert.equal(profileFromRow({ id: "u9", sleep_goal_h: "7.5" }, "u9").sleep_goal_h, 7.5);
+  assert.equal(profileFromRow({ id: "u9", sleep_goal_h: "abc" }, "u9").sleep_goal_h, null);
+  const noGoal = buildProfilePatch(none, { ...draftFromProfile(none), display_name: "New" }, NOW, TODAY);
+  assert.equal(noGoal.error, undefined); assert.deepEqual(noGoal.patch, { display_name: "New" }, "no sleep goal sneaks into the save");
+  assert.deepEqual(buildProfilePatch(none, { ...draftFromProfile(none), sleep_goal_h: "7,5" }, NOW, TODAY).patch, { sleep_goal_h: 7.5 }, "the user may set one");
+  assert.match(buildProfilePatch(none, { ...draftFromProfile(none), sleep_goal_h: "2" }, NOW, TODAY).error ?? "", /Sleep goal/);
+  assert.match(buildProfilePatch(base(), { ...draftFromProfile(base()), sleep_goal_h: "" }, NOW, TODAY).error ?? "", /cannot be removed/);
+  assert.equal(coachContext(none, TODAY).sleep_goal_h, null, "other modules see 'no goal', not 8");
+});
+
+test("imperial height edits are recorded as manual (feet and inches, like every other field)", () => {
+  const p: Profile = { ...base(), units: "imperial", height_cm: 180.3, field_sources: { height_cm: { source: "garmin", at: "2026-01-01T00:00:00Z" } } };
+  let d = draftFromProfile(p);
+  assert.equal(d.sources.height_cm, "garmin");
+  d = editValue(d, "height_ft", "height_cm", "5");
+  assert.equal(d.sources.height_cm, "manual", "typing feet takes the value over from Garmin");
+  d = editValue({ ...draftFromProfile(p) }, "height_in", "height_cm", "11");
+  assert.equal(d.sources.height_cm, "manual", "typing inches too");
+  const r = buildProfilePatch(p, editValue(editValue(draftFromProfile(p), "height_ft", "height_cm", "6"), "height_in", "height_cm", "0"), NOW, TODAY);
+  assert.equal(r.error, undefined);
+  assert.equal(r.patch.height_cm, 182.9, "6 ft 0 in");
+  assert.deepEqual((r.patch.field_sources as Record<string, { source: string }>).height_cm.source, "manual");
+  // a user-chosen source is kept; no source becomes manual
+  assert.equal(sourceAfterEdit("lab"), "lab"); assert.equal(sourceAfterEdit("manual"), "manual"); assert.equal(sourceAfterEdit(undefined), "manual");
+  for (const s of AUTO_SOURCES) assert.equal(sourceAfterEdit(s), "manual", s);
+  // metric height and weight keep working
+  assert.equal(editValue(draftFromProfile(base()), "weight", "weight_kg", "71").sources.weight_kg, "manual");
+});
+
+test("WHOOP is a valid source: stored provenance, daily measurements, labels and the 'use as baseline' suggestion", () => {
+  assert.ok(AUTO_SOURCES.includes("whoop"));
+  assert.equal(sourcesFromWhoop().resting_hr?.source, "whoop");
+  assert.equal(measuredSource("whoop", "manual"), "whoop"); assert.equal(measuredSource(null, "whoop"), "whoop"); assert.equal(measuredSource(null, null), "unknown");
+  const p = profileFromRow({ ...ROW, resting_hr: 48, field_sources: { resting_hr: { source: "whoop", at: "2026-11-01T00:00:00Z" } } }, "u1");
+  assert.equal(sourceBadge(p, "resting_hr"), "WHOOP");
+  assert.equal(coachContext(p, TODAY).baselines.resting_hr?.source, "whoop");
+  assert.equal(editValue(draftFromProfile(p), "resting_hr", "resting_hr", "49").sources.resting_hr, "manual", "typing over a WHOOP value makes it manual");
+  const page = readFileSync(join(fileURLToPath(new URL("..", import.meta.url)), "app/(app)/profile/page.tsx"), "utf8");
+  assert.match(page, /AUTO_SOURCES\.includes\(cur\)/, "the page treats WHOOP like Garmin and Intervals.icu");
+});
+function sourcesFromWhoop() { return profileFromRow({ ...ROW, field_sources: { resting_hr: { source: "whoop", at: "x" } } }, "u1").field_sources; }
+
+// first save: a signed-in account without a profile row
+function insertDb(o: { insertError?: { code?: string; message: string }; existingAfter?: boolean } = {}) {
+  const sent: Array<{ op: string; payload: Record<string, unknown> }> = []; const rows: Array<Record<string, unknown>> = [];
+  const db: Db = {
+    from() {
+      let op = "";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const b: any = {
+        insert(p: Record<string, unknown>) { op = "insert"; sent.push({ op, payload: p }); return b; },
+        update(p: Record<string, unknown>) { op = "update"; sent.push({ op, payload: p }); return b; },
+        select() { return b; }, eq() { return b; },
+        single() { return o.insertError ? Promise.resolve({ data: null, error: o.insertError }) : (rows.push({ ...sent.at(-1)!.payload }), Promise.resolve({ data: { id: sent.at(-1)!.payload.id }, error: null })); },
+        then(res: (v: unknown) => unknown) { return Promise.resolve({ data: op === "update" ? [{ id: "x" }] : null, error: null }).then(res); },
+      };
+      return b;
+    },
+  };
+  return { db, sent, rows };
+}
+test("first save without a profile row: own id only, the visible time zone and units are stored, nothing else invented; RLS is never worked around", async () => {
+  const f = insertDb();
+  await saveProfile(f.db, "dora", { display_name: "Dora", id: "someone-else", created_at: "x" }, false, { timezone: "Europe/Paris", units: "imperial" });
+  assert.deepEqual(f.sent.map((s) => s.op), ["insert"]);
+  assert.deepEqual(f.sent[0].payload, { timezone: "Europe/Paris", units: "imperial", display_name: "Dora", id: "dora" }, "id comes from the session; created_at and a foreign id are dropped; no sleep goal or other default");
+  // nothing to save: no request at all
+  const none = insertDb(); await saveProfile(none.db, "dora", {}, false, { timezone: "UTC", units: "metric" }); assert.equal(none.sent.length, 0);
+  // the row appeared meanwhile (another tab or a sign-up trigger): the save becomes an update of the same row, never an overwrite of someone else's
+  const dup = insertDb({ insertError: { code: "23505", message: 'duplicate key value violates unique constraint "profiles_pkey"' } });
+  await saveProfile(dup.db, "dora", { display_name: "Dora" }, false, { timezone: "UTC", units: "metric" });
+  assert.deepEqual(dup.sent.map((s) => s.op), ["insert", "update"]); assert.deepEqual(dup.sent[1].payload, { display_name: "Dora" });
+  // the database refuses (row-level security): a clear message, a single attempt, nothing else tried
+  const rls = insertDb({ insertError: { code: "42501", message: 'new row violates row-level security policy for table "profiles"' } });
+  const e = await saveProfile(rls.db, "dora", { display_name: "Dora" }, false, { timezone: "UTC", units: "metric" }).then(() => null, (x) => x as ProfileError);
+  assert.ok(e instanceof ProfileError && e.kind === "permission" && !e.retryable); assert.match(e.message, /not allowed to create/); assert.ok(!/row-level|policy|profiles/i.test(e.message));
+  assert.deepEqual(rls.sent.map((s) => s.op), ["insert"]);
+  // other errors are classified, not shown raw
+  const net = insertDb({ insertError: { message: "TypeError: fetch failed" } });
+  assert.equal(await saveProfile(net.db, "dora", { display_name: "D" }, false).then(() => "ok", (x) => (x as ProfileError).kind), "network");
+  // the page passes the visible time zone and units
+  const page = readFileSync(join(fileURLToPath(new URL("..", import.meta.url)), "app/(app)/profile/page.tsx"), "utf8");
+  assert.match(page, /saveProfile\(getSupabase\(\), session\.user\.id, result\.patch, state\.exists, \{ timezone: draft\.timezone\.trim\(\), units: draft\.units \}\)/);
+});
+
+test("the page shows load errors with a Try again button, and only the precise migration notice is tied to the lock", () => {
+  const page = readFileSync(join(fileURLToPath(new URL("..", import.meta.url)), "app/(app)/profile/page.tsx"), "utf8");
+  assert.match(page, />Try again<\/button>/); assert.match(page, /void load\(\)/);
+  assert.match(page, /locked = !state\.migrated/);
+  const lib = readFileSync(join(fileURLToPath(new URL("..", import.meta.url)), "lib/profile.ts"), "utf8");
+  assert.match(lib, /if \(!isMissingProfileColumn\(res\.error\)\) throw classifyProfileError\(res\.error, "load"\)/);
+  assert.ok(!/migrated = false; res = await/.test(lib), "the catch-all fallback is gone");
 });

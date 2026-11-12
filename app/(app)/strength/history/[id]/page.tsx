@@ -103,7 +103,7 @@ export default function WorkoutSummaryPage() {
       <h2>Personal records</h2>
       {pr && pr.prs.length > 0 ? (
         <div className="card">{pr.prs.map((p, i) => <div key={i} className="doserow">🏆 <b>{p.exerciseName}</b><span>{PR_LABEL[p.kind]}: {r1(p.value)} {p.unit} <span className="muted small">(previous best {r1(p.previous)} {p.unit})</span></span></div>)}</div>
-      ) : <div className="notice">No new records compared with your logged history{hist.setUp === false ? " (history is not available until migration 13 is applied)" : ""}.</div>}
+      ) : <div className="notice">No new records compared with your logged history{hist.setUp === false ? " (history isn't available until your account is fully set up)" : ""}.</div>}
       {pr && pr.baselines.length > 0 && <p className="muted small">First time logged, so nothing to compare yet: {pr.baselines.join(", ")}.</p>}
 
       <h2>Exercises</h2>

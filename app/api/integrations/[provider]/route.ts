@@ -9,7 +9,7 @@ import { refreshTokens, revoke as revokeWhoop } from "@/lib/integrations/whoop";
 export const runtime = "nodejs";
 
 const fail = (e: unknown) => {
-  if (missingTable(e)) return Response.json({ error: "Connections need a database update (migration 14) that has not been applied yet." }, { status: 503 });
+  if (missingTable(e)) return Response.json({ error: "Connections aren't available right now. Please try again later." }, { status: 503 });
   const x = integrationError(e);
   return Response.json({ error: x.message }, { status: x.status });
 };

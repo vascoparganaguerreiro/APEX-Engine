@@ -1,6 +1,7 @@
-// Race Hub logic. Pure functions, no imports (unit-testable). Dates are plain "YYYY-MM-DD" values (a race day has no time
-// zone); "today" is the user's own local calendar date, passed in by the caller, so countdowns never shift with UTC.
+// Race Hub logic. Pure functions; the only import is the shared safe-error helper (unit-testable). Dates are plain "YYYY-MM-DD" values (a race
+// day has no time zone); "today" is the user's own local calendar date, passed in by the caller, so countdowns never shift with UTC.
 // Nothing here predicts results or finish times: it only does arithmetic on what the user entered.
+import { NOT_SET_UP_MESSAGE, SafeError, friendlyError } from "./userError.ts";
 
 export const SPORTS = ["running", "cycling", "triathlon", "swimming", "football", "other"] as const;
 export type Sport = (typeof SPORTS)[number];
@@ -147,7 +148,41 @@ export function writableRow(input: Record<string, unknown>): Record<string, unkn
   return out;
 }
 export const isRaceId = (s: string) => /^\d{1,15}$/.test(s);
-const fail = (e: { message?: string } | null | undefined): never => { throw new Error(e?.message ?? "Request failed"); };
+/** Every failure becomes a SafeError: a message that is safe to show, with the technical detail in the log only. A missing Race Hub column
+ *  (migration 10 not applied: confirmed by isMissingRaceHubColumn, never guessed) is reported as "not set up". */
+const fail = (e: { message?: string } | null | undefined, what = "Your races could not be loaded"): never => {
+  if (isMissingRaceHubColumn(e)) { friendlyError(e, what, { scope: "races.not-set-up" }); throw new SafeError("not-set-up", NOT_SET_UP_MESSAGE, false); }
+  const u = friendlyError(e ?? new Error("Request failed"), what, { scope: "races" });
+  throw new SafeError(u.kind, u.message, u.retryable);
+};
+const notFound = () => new SafeError("other", "This race was not found.", false);
+
+// ------------------------------------------------------------------ before migration 10 ("legacy")
+/** The same fixed mapping migration 10 uses to fill in `sport` from the existing race_type. Nothing is invented. */
+export function legacySport(raceType: string): Sport {
+  if (["marathon", "half_marathon", "10k", "trail"].includes(raceType)) return "running";
+  if (raceType === "cycling") return "cycling";
+  if (["triathlon_sprint", "triathlon_olympic", "half_ironman", "ironman"].includes(raceType)) return "triathlon";
+  return "other";
+}
+/** Sports a legacy account can store faithfully (swimming and football both read back as "other" there). */
+export const LEGACY_SPORTS: readonly Sport[] = ["running", "cycling", "triathlon", "other"];
+/** A row read with the original columns only: sport follows from race_type; there is no status yet, so it counts as planned. */
+export const raceFromBaseRow = (r: Record<string, unknown>): Race => ({ ...raceFromRow(r), sport: legacySport(String(r.race_type)) });
+const BASE_WRITABLE = ["name", "race_date", "race_type", "priority", "goal", "notes"] as const;
+const baseRow = (input: RaceInput): Record<string, unknown> => { const out: Record<string, unknown> = {}; for (const k of BASE_WRITABLE) out[k] = (input as unknown as Record<string, unknown>)[k]; return out; };
+/** What a save with the original columns could not keep. Nothing is ever dropped silently: if any of these is set, the save is refused with
+ *  a plain-language reason (the form does not offer these fields on such an account, so this is a second line of defence). */
+export function legacyBlocker(input: RaceInput): string | null {
+  const lost: string[] = [];
+  if (input.sport !== legacySport(input.race_type)) lost.push("this sport");
+  if (input.location) lost.push("the location");
+  if (input.distance !== null || input.distance_unit !== null) lost.push("the distance");
+  if (input.target_time_s !== null) lost.push("the target time");
+  if (input.status !== "planned") lost.push("the status");
+  return lost.length ? `This account can't store ${lost.join(", ")} yet, so the race was not saved. Ask the person who runs APEX to finish setting up Races.` : null;
+}
+export interface WriteOptions { legacy?: boolean }
 
 export async function listRaces(db: Db): Promise<Race[]> {
   const { data, error } = await db.from("races").select(RACE_COLUMNS).order("race_date", { ascending: true });
@@ -159,23 +194,48 @@ export async function getRace(db: Db, id: number): Promise<Race | null> {
   if (error) fail(error);
   return data ? raceFromRow(data as Record<string, unknown>) : null;
 }
-/** user_id always comes from the verified session, never from the form input. */
-export async function createRace(db: Db, uid: string, input: RaceInput): Promise<Race> {
+/** One race, falling back to the original columns ONLY when a Race Hub column is confirmed missing. `legacy` says the extra fields are unavailable. */
+export async function getRaceCompat(db: Db, id: number): Promise<{ race: Race | null; legacy: boolean }> {
+  const full = await db.from("races").select(RACE_COLUMNS).eq("id", id).maybeSingle();
+  if (!full.error) return { race: full.data ? raceFromRow(full.data as Record<string, unknown>) : null, legacy: false };
+  if (!isMissingRaceHubColumn(full.error)) fail(full.error);
+  const base = await db.from("races").select(BASE_RACE_COLUMNS).eq("id", id).maybeSingle();
+  if (base.error) fail(base.error);
+  return { race: base.data ? raceFromBaseRow(base.data as Record<string, unknown>) : null, legacy: true };
+}
+/** user_id always comes from the verified session, never from the form input. With `legacy` only the original columns are written, and only
+ *  when that loses nothing (see legacyBlocker). */
+export async function createRace(db: Db, uid: string, input: RaceInput, opts: WriteOptions = {}): Promise<Race> {
+  const what = "The race could not be saved";
+  if (opts.legacy) {
+    const blocked = legacyBlocker(input); if (blocked) throw new SafeError("other", blocked, false);
+    const { data, error } = await db.from("races").insert({ ...baseRow(input), user_id: uid }).select(BASE_RACE_COLUMNS).single();
+    if (error) fail(error, what);
+    return raceFromBaseRow(data as Record<string, unknown>);
+  }
   const { data, error } = await db.from("races").insert({ ...writableRow(input as unknown as Record<string, unknown>), user_id: uid }).select(RACE_COLUMNS).single();
-  if (error) fail(error);
+  if (error) fail(error, what);
   return raceFromRow(data as Record<string, unknown>);
 }
 /** Updates by id only; user_id is never written. Another user's race matches no row (RLS), which is reported as not found. */
-export async function updateRace(db: Db, id: number, input: RaceInput): Promise<Race> {
+export async function updateRace(db: Db, id: number, input: RaceInput, opts: WriteOptions = {}): Promise<Race> {
+  const what = "The race could not be saved";
+  if (opts.legacy) {
+    const blocked = legacyBlocker(input); if (blocked) throw new SafeError("other", blocked, false);
+    const { data, error } = await db.from("races").update(baseRow(input)).eq("id", id).select(BASE_RACE_COLUMNS);
+    if (error) fail(error, what);
+    if (!data || data.length === 0) throw notFound();
+    return raceFromBaseRow(data[0] as Record<string, unknown>);
+  }
   const { data, error } = await db.from("races").update(writableRow(input as unknown as Record<string, unknown>)).eq("id", id).select(RACE_COLUMNS);
-  if (error) fail(error);
-  if (!data || data.length === 0) throw new Error("Race not found.");
+  if (error) fail(error, what);
+  if (!data || data.length === 0) throw notFound();
   return raceFromRow(data[0] as Record<string, unknown>);
 }
 export async function deleteRace(db: Db, id: number): Promise<void> {
   const { data, error } = await db.from("races").delete().eq("id", id).select("id");
-  if (error) fail(error);
-  if (!data || data.length === 0) throw new Error("Race not found.");
+  if (error) fail(error, "The race could not be deleted");
+  if (!data || data.length === 0) throw notFound();
 }
 /** All races for read-only views (Today). Same rows as listRaces, but if the Race Hub columns (migration 10) are missing it reads the
  *  original columns instead of failing: those races then get the defaults raceFromRow gives (status "planned", sport "other"), exactly
@@ -200,7 +260,7 @@ export async function listRacesCompat(db: Db): Promise<{ races: Race[]; legacy: 
   if (!isMissingRaceHubColumn(full.error)) fail(full.error);             // a genuine error is reported, never hidden by the legacy query
   const base = await db.from("races").select(BASE_RACE_COLUMNS).order("race_date", { ascending: true });
   if (base.error) fail(base.error);
-  return { races: ((base.data ?? []) as Record<string, unknown>[]).map(raceFromRow), legacy: true };
+  return { races: ((base.data ?? []) as Record<string, unknown>[]).map(raceFromBaseRow), legacy: true };
 }
 /** The next upcoming race (Races page rule: isUpcoming, soonest first, then priority) or null when none qualifies. Throws on a genuine
  *  error. Before migration 10 it reads the original columns; those races have no status yet and count as planned (raceFromRow). */

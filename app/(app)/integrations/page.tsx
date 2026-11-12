@@ -1,16 +1,17 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
-import { disconnectProvider, integrationConfig, saveProviderSettings, startConnection, syncIntervals, syncProvider } from "@/lib/api";
+import { disconnectProvider, integrationConfig, saveProviderSettings, startConnection, syncProvider } from "@/lib/api";
+import IntervalsCard from "@/components/IntervalsCard";
 import { CATEGORY_LABEL, PROVIDERS, STATUS_LABEL, cardState, type ProviderInfo, type UserIntegrationState } from "@/lib/integrations/providers";
 import { freshness } from "@/lib/integrations/normalize";
 import { loadSnapshot, type DirectConn, type IntegrationSnapshot } from "@/lib/integrations/status";
 
 type Db = Parameters<typeof loadSnapshot>[0];
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+import { friendlyError, friendlyMessage, safeText } from "@/lib/userError";
+const errMsg = (e: unknown) => friendlyMessage(e, "That could not be completed", { scope: "integrations" });
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString() : "never");
 const RESULT_TEXT: Record<string, { kind: "ok" | "error"; text: string }> = {
   connected: { kind: "ok", text: "Connected. Press Sync now to import your data." },
@@ -29,10 +30,17 @@ export default function IntegrationsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
+  const [configError, setConfigError] = useState<{ message: string; retryable: boolean } | null>(null);   // which providers the server offers could not be checked
+
   const load = useCallback(async () => {
     if (!session) return;
-    const [s, c] = await Promise.all([loadSnapshot(getSupabase() as unknown as Db), integrationConfig().catch(() => ({ configured: [] as string[] }))]);
-    setSnap(s); setConfigured(new Set(c.configured));
+    const [s, c] = await Promise.all([
+      loadSnapshot(getSupabase() as unknown as Db),
+      integrationConfig().then((r) => ({ ok: true as const, configured: r.configured }), (e: unknown) => ({ ok: false as const, error: friendlyError(e, "Which connections are available could not be checked", { scope: "integrations.config" }) })),
+    ]);
+    setSnap(s);
+    if (c.ok) { setConfigured(new Set(c.configured)); setConfigError(null); }
+    else setConfigError({ message: c.error.message, retryable: c.error.retryable });      // never reported as "server set-up needed": that is only said when the check succeeded
   }, [session]);
   useEffect(() => { load(); }, [load]);
 
@@ -57,8 +65,7 @@ export default function IntegrationsPage() {
     if (!window.confirm(`Disconnect ${p.name}? APEX revokes its access. Data already imported is kept.`)) return;
     run(`disconnect:${p.id}`, async () => { const r = await disconnectProvider(p.id); return r.revoked ? `${p.name} disconnected and access revoked.` : `${p.name} disconnected. Also remove APEX in ${p.name}'s own app settings to be sure.`; });
   };
-  const syncNow = (p: ProviderInfo) => run(`sync:${p.id}`, async () => {
-    if (p.id === "intervals") { const r = await syncIntervals(); return `Intervals.icu: ${r.activities} activities and ${r.wellness} wellness days (${r.oldest} to ${r.newest}).${r.notes.length ? " " + r.notes.join(" ") : ""}`; }
+  const syncNow = (p: ProviderInfo) => run(`sync:${p.id}`, async () => {     // WHOOP only: Intervals.icu syncs from its own embedded controls
     const r = await syncProvider("whoop");
     return `WHOOP: ${r.observations} values saved${r.dailyFilled ? `, ${r.dailyFilled} daily entries filled` : ""}${r.workoutsImported ? `, ${r.workoutsImported} workouts added` : ""}.${r.notes.length ? " " + r.notes.join(" ") : ""}`;
   });
@@ -73,7 +80,22 @@ export default function IntegrationsPage() {
       <h1>Connectivity Centre</h1>
       <p className="muted small">Where your data comes from. <b>Direct</b> connections are made by APEX itself. <b>Through Intervals.icu</b> means the brand sends its activities to Intervals.icu and APEX reads them there. Measurements always keep the device that made them and the route they took; scores from different brands (WHOOP Recovery, Garmin readiness…) are never treated as the same thing. Credentials are never shown on this page.</p>
       {msg && <div className={`notice ${msg.kind}`} role={msg.kind === "error" ? "alert" : "status"}>{msg.text}</div>}
-      {!snap.migrated14 && <div className="notice">Sync status and direct connections such as WHOOP need a database update (migration 14) that has not been applied yet. Intervals.icu keeps working as before.</div>}
+      {snap.connections.status === "not-set-up" && <div className="notice">Sync status and direct connections such as WHOOP aren&apos;t set up on your account yet. Ask the person who runs APEX. Intervals.icu keeps working as before.</div>}
+      {snap.connections.status === "error" && (
+        <div className="notice error" role="alert">{snap.connections.message} Intervals.icu keeps working as before.
+          {snap.connections.retryable && <> <button className="btn ghost" disabled={busy !== null} onClick={() => { void load(); }}>Try again</button></>}
+        </div>
+      )}
+      {snap.partial && (
+        <div className="notice" role="status">{snap.partial.message}
+          {snap.partial.retryable && <> <button className="btn ghost" disabled={busy !== null} onClick={() => { void load(); }}>Try again</button></>}
+        </div>
+      )}
+      {configError && (
+        <div className="notice" role="status">{configError.message}
+          {configError.retryable && <> <button className="btn ghost" disabled={busy !== null} onClick={() => { void load(); }}>Try again</button></>}
+        </div>
+      )}
 
       {PROVIDERS.map((p) => {
         const c = cardState(p, state), d = direct(p.id);
@@ -96,16 +118,15 @@ export default function IntegrationsPage() {
               <div className="metrics">
                 <div><small>Last successful sync</small><b>{when(last)}</b></div>
                 <div><small>Latest data</small><b>{latest ? latest.slice(0, 10) : "none yet"}</b>{fresh === "stale" && <small className="muted">older than 36 hours</small>}</div>
-                {d?.last_error && <div><small>Last error</small><b style={{ fontSize: 14 }}>{d.last_error}</b><small className="muted">{when(d.last_error_at)}</small></div>}
+                {d?.last_error && <div><small>Last error</small><b style={{ fontSize: 14 }}>{safeText(d.last_error, "The last sync did not complete.")}</b><small className="muted">{when(d.last_error_at)}</small></div>}
                 {d?.next_retry_at && Date.parse(d.next_retry_at) > Date.now() && <div><small>Paused until</small><b>{when(d.next_retry_at)}</b></div>}
               </div>
             )}
-            {c.setupMissing.length > 0 && <p className="muted small">Server set-up needed: {c.setupMissing.join(", ")} (see docs/universal-connect.md).</p>}
+            {!configError && c.setupMissing.length > 0 && <p className="muted small">This connection isn&apos;t available yet. It still needs to be set up by the person who runs APEX.</p>}
             <div className="row">
               {p.id === "intervals" && (
                 <>
-                  {snap.intervals.connected && <button className="btn" disabled={busy !== null} onClick={() => syncNow(p)}>{busy === "sync:intervals" ? "Syncing…" : "Sync now"}</button>}
-                  <Link className="btn ghost" href="/import">{snap.intervals.connected ? "Manage API key" : "Connect with API key"}</Link>
+                  {/* The API-key connection, Sync now, re-sync and disconnect live in the embedded form below (components/IntervalsCard.tsx): one place only. */}
                   {!snap.intervals.connected && configured.has("INTERVALS_CLIENT_ID") && snap.migrated14 &&
                     <button className="btn ghost" disabled={busy !== null} onClick={() => connect("intervals")}>Sign in with Intervals.icu</button>}
                   {d && d.status !== "disconnected" && d.scopes.some((s) => s !== "personal_key") &&
@@ -120,6 +141,7 @@ export default function IntegrationsPage() {
                 </>
               )}
             </div>
+            {p.id === "intervals" && <IntervalsCard embedded onChange={() => { void load(); }} />}
             {p.id === "whoop" && c.status === "connected" && d && (
               <div style={{ marginTop: 10 }}>
                 <label className="row small"><input type="checkbox" checked={!!d.settings.fill_daily} disabled={busy !== null} onChange={(e) => setting("fill_daily", e.target.checked)} />
@@ -131,7 +153,7 @@ export default function IntegrationsPage() {
           </section>
         );
       })}
-      <p className="muted small">Details, sources and what each provider really offers: see the provider audit in the project documentation (docs/universal-connect.md).</p>
+      <p className="muted small">Each connection above lists what it can and cannot provide.</p>
     </>
   );
 }

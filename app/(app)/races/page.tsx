@@ -5,19 +5,22 @@ import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
 import { todayIso } from "@/lib/dates";
 import {
-  SPORTS, SPORT_LABEL, countdown, createRace, deleteRace, filterRaces, formatDate, goalRace, listRaces, monthGroups, nextRace, splitRaces, updateRace,
+  SPORTS, SPORT_LABEL, countdown, createRace, deleteRace, filterRaces, formatDate, goalRace, listRacesCompat, monthGroups, nextRace, splitRaces, updateRace,
   type Race, type RaceInput, type Sport,
 } from "@/lib/races";
 import RaceForm from "@/components/races/RaceForm";
 import { PriorityPill, RaceSummary, raceMeta } from "@/components/races/RaceBits";
+import { friendlyError, friendlyMessage } from "@/lib/userError";
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e));
+const errMsg = (e: unknown) => friendlyMessage(e, "That could not be completed", { scope: "races" });
 
 export default function RacesPage() {
   const { session } = useAuth();
   const today = todayIso();
   const [races, setRaces] = useState<Race[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ message: string; retryable: boolean } | null>(null);   // the list could not be read: nothing else is offered
+  const [legacy, setLegacy] = useState(false);       // the account stores only the original race fields (confirmed missing columns, never a guess)
   const [q, setQ] = useState("");
   const [sport, setSport] = useState<Sport | "all">("all");
   const [view, setView] = useState<"list" | "timeline">("list");
@@ -25,7 +28,13 @@ export default function RacesPage() {
   const [defaultUnit, setDefaultUnit] = useState<"km" | "mi">("km");
 
   const load = useCallback(async () => {
-    try { setRaces(await listRaces(getSupabase())); setError(null); } catch (e) { setError(errMsg(e)); setRaces((r) => r ?? []); }
+    try {
+      const r = await listRacesCompat(getSupabase());
+      setRaces(r.races); setLegacy(r.legacy); setError(null); setLoadError(null);
+    } catch (e) {
+      const u = friendlyError(e, "Your races could not be loaded", { scope: "races.load" });
+      setLoadError({ message: u.message, retryable: u.retryable });
+    }
   }, []);
   useEffect(() => { if (session) load(); }, [session, load]);
   // The profile's unit preference only sets the default distance unit of a NEW race; failures just keep "km".
@@ -42,7 +51,12 @@ export default function RacesPage() {
 
   async function save(input: RaceInput, existing: Race | null) {
     const sb = getSupabase();
-    if (existing) await updateRace(sb, existing.id, input); else await createRace(sb, session!.user.id, input);
+    try {
+      if (existing) await updateRace(sb, existing.id, input, { legacy }); else await createRace(sb, session!.user.id, input, { legacy });
+    } catch (e) {
+      if (friendlyError(e).kind === "not-set-up") await load();      // the account turned out to store fewer fields than assumed: re-read it
+      throw e;
+    }
     setEditing(null); await load();
   }
   async function remove(r: Race) {
@@ -52,7 +66,7 @@ export default function RacesPage() {
 
   function card(r: Race, dim = false) {
     if (editing !== null && editing !== "new" && editing.id === r.id) {
-      return <RaceForm key={`edit-${r.id}`} initial={r} today={today} onSave={(i) => save(i, r)} onCancel={() => setEditing(null)} />;
+      return <RaceForm key={`edit-${r.id}`} initial={r} today={today} legacy={legacy} onSave={(i) => save(i, r)} onCancel={() => setEditing(null)} />;
     }
     return (
       <article key={r.id} className={`card racecard prio-border-${r.priority}${dim ? " dim" : ""}`}>
@@ -73,13 +87,21 @@ export default function RacesPage() {
     <>
       <div className="eyebrow">Season</div>
       <h1>Races</h1>
+      {loadError && (
+        <div className="notice error" role="alert">{loadError.message}
+          {loadError.retryable && <> <button className="btn ghost" onClick={() => { setLoadError(null); void load(); }}>Try again</button></>}
+        </div>
+      )}
       {error && <div className="notice error">{error}</div>}
-      {races === null && !error && <p className="muted">Loading...</p>}
+      {races === null && !error && !loadError && <p className="muted">Loading...</p>}
+      {races !== null && legacy && (
+        <div className="notice">Your races are shown with their basic details. Location, distance, target time and status aren&apos;t set up on your account yet, so they can&apos;t be shown or saved. You can still add and edit the name, date, sport, format, priority, goal and notes.</div>
+      )}
 
       {races !== null && (
         <>
           {editing === "new"
-            ? <RaceForm key="new" today={today} defaultUnit={defaultUnit} onSave={(i) => save(i, null)} onCancel={() => setEditing(null)} />
+            ? <RaceForm key="new" today={today} defaultUnit={defaultUnit} legacy={legacy} onSave={(i) => save(i, null)} onCancel={() => setEditing(null)} />
             : <button className="btn" onClick={() => setEditing("new")}>+ Add race</button>}
 
           {all.length === 0 && !editing && (

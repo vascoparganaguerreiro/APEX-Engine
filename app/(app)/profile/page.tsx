@@ -4,13 +4,15 @@ import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
 import { todayIso } from "@/lib/dates";
+import { friendlyMessage } from "@/lib/userError";
 import {
-  EXPERIENCE, GOALS, SOURCE_LABEL, SPORT_CHOICES, SPORT_LABELS, ageFromBirth, buildProfilePatch, draftFromProfile, loadIntegrations, loadMeasured, loadProfile,
+  AUTO_SOURCES, EXPERIENCE, GOALS, SOURCE_LABEL, SPORT_CHOICES, SPORT_LABELS, ageFromBirth, buildProfilePatch, draftFromProfile, editValue, loadIntegrations, loadMeasured, loadProfile,
   parseHeightCm, parsePace, parseWeightKg, saveProfile, type Integrations, type Measured, type Profile, type ProfileDraft, type Source, type SourceField, type Units,
 } from "@/lib/profile";
 import GarminDeviceCard from "@/components/strength/GarminDeviceCard";
+import ChangePasswordCard from "@/components/ChangePasswordCard";
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e));
+const errMsg = (e: unknown) => friendlyMessage(e, "Your profile could not be saved", { scope: "profile.page" });
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "never");
 const deviceTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return "UTC"; } };
 const zones = (): string[] => { try { return (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.("timeZone") ?? []; } catch { return []; } };
@@ -41,10 +43,9 @@ export default function ProfilePage() {
 
   const edit = (p: Partial<ProfileDraft>) => { setOk(null); setDraft((d) => (d ? { ...d, ...p } : d)); };
   const text = (k: keyof ProfileDraft) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => edit({ [k]: e.target.value } as Partial<ProfileDraft>);
-  /** Typing over a value that was taken from Garmin or Intervals makes it a manual value again. */
-  const valueField = (k: keyof ProfileDraft, f: SourceField) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    const cur = draft?.sources[f];
-    edit({ [k]: e.target.value, sources: { ...draft!.sources, ...(cur === undefined || cur === "garmin" || cur === "intervals" ? { [f]: "manual" as Source } : {}) } } as Partial<ProfileDraft>);
+  /** Typing over a value that was taken from Garmin, Intervals.icu or WHOOP makes it a manual value again (lib/profile.ts editValue). */
+  const valueField = (k: Parameters<typeof editValue>[1], f: SourceField) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setOk(null); setDraft((d) => (d ? editValue(d, k, f, e.target.value) : d));
   };
 
   function changeUnits(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -69,12 +70,20 @@ export default function ProfilePage() {
     if (result.error) { setError(result.error); setOk(null); return; }
     if (Object.keys(result.patch).length === 0) { setError(null); setOk("Nothing to save: no field was changed."); return; }
     setSaving(true); setError(null); setOk(null);
-    try { await saveProfile(getSupabase(), session.user.id, result.patch, state.exists); await load(); setOk("Profile saved."); }
+    try { await saveProfile(getSupabase(), session.user.id, result.patch, state.exists, { timezone: draft.timezone.trim(), units: draft.units }); await load(); setOk("Profile saved."); }
     catch (x) { setError(errMsg(x)); } finally { setSaving(false); }
   }
 
   if (!state || !draft) {
-    return <><div className="eyebrow">Account</div><h1>Profile</h1>{error ? <div className="notice error">{error}</div> : <p className="muted">Loading...</p>}</>;
+    return (
+      <><div className="eyebrow">Account</div><h1>Profile</h1>
+        {error ? (
+          <div className="notice error" role="alert">{error}
+            <div className="row" style={{ marginTop: 10 }}><button type="button" className="btn" onClick={() => { setError(null); void load(); }}>Try again</button></div>
+          </div>
+        ) : <p className="muted">Loading...</p>}
+      </>
+    );
   }
   const p = state.profile, imperial = draft.units === "imperial", locked = !state.migrated;
   const age = ageFromBirth(draft.birth_date.trim() || null, today);
@@ -82,7 +91,7 @@ export default function ProfilePage() {
   const sourceSel = (f: SourceField) => {
     const cur = draft.sources[f];
     if (state.profile[f] === null && !draftHasValue(draft, f)) return null;
-    if (cur === "garmin" || cur === "intervals") return <small className="srcbadge">From {SOURCE_LABEL[cur]}</small>;
+    if (cur && AUTO_SOURCES.includes(cur)) return <small className="srcbadge">From {SOURCE_LABEL[cur]}</small>;
     return (
       <select className="srcsel" aria-label="Source of this value" value={cur ?? ""} disabled={locked} onChange={(e) => edit({ sources: { ...draft.sources, [f]: (e.target.value || undefined) as Source | undefined } })}>
         {!cur && <option value="">Source not recorded</option>}<option value="manual">Manual</option><option value="lab">Lab test</option>
@@ -100,7 +109,7 @@ export default function ProfilePage() {
       <p className="muted small">Your private baselines. Daily measurements such as HRV, daily resting heart rate and sleep stay in your daily data and are never copied here automatically. Everything on this page is optional.</p>
       {error && <div className="notice error">{error}</div>}
       {ok && <div className="notice ok">{ok}</div>}
-      {locked && <div className="notice">The extra profile fields need a database update (migration 11) that has not been applied yet. Name, units, time zone, body measurements, max heart rate, FTP and sleep goal still work.</div>}
+      {locked && <div className="notice">The extra profile fields aren&apos;t set up on your account yet. Name, units, time zone, body measurements, max heart rate, FTP and sleep goal still work.</div>}
 
       <form onSubmit={save}>
         <section className="card psec">
@@ -109,7 +118,7 @@ export default function ProfilePage() {
             <label>Display name<input value={draft.display_name} maxLength={60} onChange={text("display_name")} placeholder="optional" /></label>
             <label>Date of birth{age !== null && <small>{age} years old</small>}<input type="date" value={draft.birth_date} max={today} onChange={text("birth_date")} disabled={locked} /></label>
             {imperial ? (
-              <label>Height (ft / in)<span className="row"><input inputMode="numeric" value={draft.height_ft} onChange={text("height_ft")} placeholder="ft" style={{ width: "50%" }} /><input inputMode="decimal" value={draft.height_in} onChange={text("height_in")} placeholder="in" style={{ width: "50%" }} /></span>{sourceSel("height_cm")}</label>
+              <label>Height (ft / in)<span className="row"><input inputMode="numeric" value={draft.height_ft} onChange={valueField("height_ft", "height_cm")} placeholder="ft" style={{ width: "50%" }} /><input inputMode="decimal" value={draft.height_in} onChange={valueField("height_in", "height_cm")} placeholder="in" style={{ width: "50%" }} /></span>{sourceSel("height_cm")}</label>
             ) : (
               <label>Height (cm)<input inputMode="decimal" value={draft.height_cm} onChange={valueField("height_cm", "height_cm")} placeholder="optional" />{sourceSel("height_cm")}</label>
             )}
@@ -171,7 +180,7 @@ export default function ProfilePage() {
             <div className="doserow"><b>Intervals.icu</b>
               <span className={integrations.intervals.connected ? "badge" : "badge off"}>{integrations.intervals.connected ? "Connected" : "Not connected"}</span>
               <span className="muted small">{integrations.intervals.connected ? `Athlete ${integrations.intervals.athlete_id ?? ""} · last sync ${fmtDate(integrations.intervals.last_sync_at)}` : "Connect it to import activities and wellness."}</span>
-              <Link className="chip" href="/import" style={{ marginLeft: "auto" }}>{integrations.intervals.connected ? "Manage" : "Connect"}</Link></div>
+              <Link className="chip" href="/integrations" style={{ marginLeft: "auto" }}>{integrations.intervals.connected ? "Manage" : "Connect"}</Link></div>
             <div className="doserow"><b>Garmin history</b>
               <span className={integrations.garmin ? "badge" : "badge off"}>{integrations.garmin ? "Data found" : "No data"}</span>
               <span className="muted small">{integrations.garmin ? `Latest day ${integrations.garmin.latest}` : "No Garmin-labelled daily data in your account."}</span></div>
@@ -195,6 +204,7 @@ export default function ProfilePage() {
           <div><small>Member since</small><b>{session?.user.created_at ? new Date(session.user.created_at).toLocaleDateString() : "n/a"}</b></div>
         </div>
         <p className="muted small" style={{ marginBottom: 0 }}>Your profile is private: only you can read or change it.</p>
+        <ChangePasswordCard email={session?.user.email} />
       </section>
     </>
   );

@@ -11,7 +11,7 @@ import {
 } from "../lib/strength/workout.ts";
 import { e1rm, exerciseStats, fromWorkout, personalRecords, workSets, type HSession } from "../lib/strength/analytics.ts";
 import { setVolumeKg } from "../lib/strength/units.ts";
-import { loadHistory, loadWorkouts, type Db } from "../lib/strength/data.ts";
+import { NotSetUp, loadHistory, loadWorkouts, type Db } from "../lib/strength/data.ts";
 import { FakeStrengthServer, T0, at, clock, ex, transportFor, uid } from "./strength-fixtures.ts";
 
 const bench = () => {
@@ -243,7 +243,7 @@ test("a workout logged in APEX and Hevy and merged is counted once in history, T
 });
 
 test("before migration 13 history is simply unavailable (not set up); an unreadable link table never hides workouts", async () => {
-  await assert.rejects(loadHistory({ rpc() { return null; }, from() { const q: Record<string, unknown> = {}; for (const m of ["select", "is", "eq", "gte", "in", "order"]) q[m] = () => q; q.range = () => Promise.resolve({ data: null, error: { code: "42P01", message: "relation does not exist" } }); return q; } }, { keys: null, resolve }), /migration 13/);
+  await assert.rejects(loadHistory({ rpc() { return null; }, from() { const q: Record<string, unknown> = {}; for (const m of ["select", "is", "eq", "gte", "in", "order"]) q[m] = () => q; q.range = () => Promise.resolve({ data: null, error: { code: "42P01", message: "relation does not exist" } }); return q; } }, { keys: null, resolve }), (e: unknown) => e instanceof NotSetUp && !/migration|\.sql/i.test((e as Error).message));
   assert.equal((await loadHistory(historyDb([sRow("a", "apex", 1)], "missing"), { keys: null, resolve })).length, 1, "links missing: all workouts kept");
 });
 

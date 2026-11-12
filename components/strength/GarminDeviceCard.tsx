@@ -30,13 +30,13 @@ export default function GarminDeviceCard({ uid, intervals }: { uid: string; inte
     <section className="card psec">
       <h2>Wearable device</h2>
       {error && <div className="notice error">{error}</div>}
-      {setUp === false && <div className="notice">Device settings need migration <code>13_strength.sql</code>. Until it is applied, the Forerunner 965 is assumed and nothing is saved.</div>}
+      {setUp === false && <div className="notice">Device settings aren&apos;t set up for your account yet. Until they are, the Forerunner 965 is assumed and nothing is saved.</div>}
       <label>Device<select value={model} disabled={setUp !== true} onChange={(e) => void choose(e.target.value as Device["model"])}>{(Object.keys(MODELS) as Device["model"][]).map((m) => <option key={m} value={m}>{MODELS[m]}</option>)}</select></label>
       <div className="intlist">
         <div className="doserow"><b>Garmin connection</b>
           <span className={intervals?.connected ? "badge" : "badge off"}>{intervals?.connected ? "Through Intervals.icu" : "Not connected"}</span>
           <span className="muted small">APEX has no direct Garmin Connect link. Activities from the watch reach APEX through Intervals.icu (Garmin Connect → Intervals.icu → APEX).</span></div>
-        <div className="doserow"><b>Last successful sync</b><span className="muted small">Intervals.icu: {fmt(intervals?.last_sync_at ?? null)}{garmin?.provenance ? ` · newest activity marked as from Garmin: ${fmt(garmin.lastGarminActivity)}` : " · the activity origin is recorded once migration 13 is applied"}</span></div>
+        <div className="doserow"><b>Last successful sync</b><span className="muted small">Intervals.icu: {fmt(intervals?.last_sync_at ?? null)}{garmin?.provenance ? ` · newest activity marked as from Garmin: ${fmt(garmin.lastGarminActivity)}` : " · the activity origin is recorded once your account is fully set up"}</span></div>
         <div className="doserow"><b>Workout export</b>
           <span className="muted small">{ADAPTERS.map((a) => `${a.label.split(" (")[0]}: ${a.status === "available" ? "available" : a.status === "experimental" ? "experimental, not yet confirmed on the watch" : "not available (needs Garmin Training API approval)"}`).join(" · ")}.
             {device?.lastExportAt ? ` Last download: ${fmt(device.lastExportAt)} (${device.lastExportKind}). APEX cannot see whether it reached the watch.` : ""}</span>

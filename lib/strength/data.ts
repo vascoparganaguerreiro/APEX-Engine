@@ -1,23 +1,29 @@
 // Strength Hub data access. Every call runs with the signed-in user's own Supabase client, so row level security limits it to their rows.
 // No credentials are read. A missing table or function (migration 13 not applied yet) is reported as NotSetUp, never as a crash.
-import type { HSession } from "./analytics.ts";
+import { workingExercises, workingSetCount, type HSession } from "./analytics.ts";
 import { strengthExcludedIds, type ActivitySource, type Decision, type Link, type StrengthSource } from "./dedup.ts";
 import { exerciseFromCustom, type CustomExerciseRow } from "./library.ts";
 import { routineFromRow, routinePayload, type Routine } from "./routines.ts";
 import { TransportError, type Op, type OpResult, type Transport } from "./sync.ts";
+import { NOT_SET_UP_MESSAGE, SafeError, friendlyError } from "../userError.ts";
 import type { Exercise, LoadMode, SetType, WeightUnit } from "./types.ts";
 import type { WExercise, WSet, Workout } from "./workout.ts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface Db { from(table: string): any; rpc(fn: string, args: Record<string, unknown>): any }
-export class NotSetUp extends Error { constructor() { super("The Strength Hub database is not set up yet (migration 13 has not been applied)."); } }
+/** A CONFIRMED missing table / column / function (see isMissing). The message is safe to show; the migration number stays in code and logs. */
+export class NotSetUp extends SafeError { constructor() { super("not-set-up", NOT_SET_UP_MESSAGE, false); this.name = "NotSetUp"; } }
 interface PgError { message?: string; code?: string; details?: string; hint?: string }
 /** PostgREST / Postgres answers for "this table/column/function does not exist". */
 export function isMissing(e: PgError | null | undefined): boolean {
   if (!e) return false;
   return ["42P01", "42703", "42883", "PGRST200", "PGRST202", "PGRST204", "PGRST205"].includes(e.code ?? "") || /does not exist|could not find the (table|function|relation)|schema cache/i.test(e.message ?? "");
 }
-const fail = (e: PgError | null | undefined): never => { if (isMissing(e)) throw new NotSetUp(); throw new Error(e?.message ?? "Request failed"); };
+const fail = (e: PgError | null | undefined): never => {
+  if (isMissing(e)) throw new NotSetUp();
+  const u = friendlyError(e ?? new Error("Request failed"), "That could not be completed", { scope: "strength.data" });     // raw database text never reaches the screen
+  throw new SafeError(u.kind, u.message, u.retryable);
+};
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
 // ------------------------------------------------------------------ sync transport (apply_strength_ops)
@@ -29,7 +35,7 @@ export function supabaseTransport(db: Db, isOnline: () => boolean = () => true):
       try { res = await db.rpc("apply_strength_ops", { p_ops: ops }); }
       catch (e) { throw new TransportError("offline", e instanceof Error ? e.message : "network error"); }
       if (res.error) {
-        if (isMissing(res.error)) throw new TransportError("not_set_up", "migration 13 not applied");
+        if (isMissing(res.error)) throw new TransportError("not_set_up", "not set up");
         if (/jwt|auth|401/i.test(`${res.error.code} ${res.error.message}`)) throw new TransportError("auth", "signed out");
         if (/fetch|network|timeout/i.test(res.error.message ?? "")) throw new TransportError("offline", res.error.message ?? "network");
         throw new TransportError("server", res.error.message ?? "server error");
@@ -173,13 +179,20 @@ export async function activitySources(db: Db, sinceIso: string): Promise<Activit
   }));
 }
 export async function strengthSources(db: Db, sinceIso: string): Promise<StrengthSource[]> {
-  const rows = await pageAll<Record<string, unknown>>((from, to) => db.from("strength_sessions").select("id,started_at,ended_at,title,source,status,strength_session_exercises(exercise_name,deleted_at,strength_sets(id,deleted_at))")
+  const rows = await pageAll<Record<string, unknown>>((from, to) => db.from("strength_sessions").select("id,started_at,ended_at,paused_seconds,title,source,status,strength_session_exercises(exercise_name,deleted_at,strength_sets(id,set_type,completed,deleted_at))")
     .is("deleted_at", null).eq("status", "completed").gte("started_at", sinceIso).order("started_at", { ascending: false }).order("id", { ascending: true }).range(from, to), { size: 500, max: 10_000 });
   return rows.map((s) => {
-    const exs = ((s.strength_session_exercises ?? []) as Array<Record<string, unknown>>).filter((e) => !e.deleted_at);
+    // The same helpers Strength and Today count with: only completed, non-warm-up sets are work, and an exercise counts only if it has one.
+    const exs = ((s.strength_session_exercises ?? []) as Array<Record<string, unknown>>).filter((e) => !e.deleted_at).map((e) => ({
+      key: null, name: String(e.exercise_name), loadMode: "total" as LoadMode,
+      sets: ((e.strength_sets ?? []) as Array<Record<string, unknown>>).filter((x) => !x.deleted_at).map((x) => ({
+        type: x.set_type as SetType, weight: null, unit: "kg" as WeightUnit, reps: null, duration_s: null, distance_m: null, rpe: null, completed: Boolean(x.completed),
+      })),
+    }));
+    const working = workingExercises({ exercises: exs });
     return {
       kind: "strength" as const, id: String(s.id), startedAt: String(s.started_at), endedAt: (s.ended_at as string | null) ?? null, title: String(s.title), source: s.source === "hevy_csv" ? "hevy_csv" as const : "apex" as const,
-      exercises: exs.length, sets: exs.reduce((n, e) => n + ((e.strength_sets ?? []) as Array<Record<string, unknown>>).filter((x) => !x.deleted_at).length, 0), exerciseNames: exs.map((e) => String(e.exercise_name)),
+      exercises: working.length, sets: workingSetCount({ exercises: exs }), exerciseNames: working.map((e) => e.name), pausedS: Number(s.paused_seconds ?? 0) || 0,
     };
   });
 }

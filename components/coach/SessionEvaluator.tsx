@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { coachRequest } from "@/lib/api";
+import { friendlyMessage } from "@/lib/userError";
 import { COACH_SPORTS, SPORT_NAME, type Category, type CoachSport } from "@/lib/coach/schema";
 import type { SessionResult } from "@/lib/coach/engine";
 import { SessionCard } from "./AssessmentCards";
@@ -44,7 +45,7 @@ export default function SessionEvaluator({ authorized, consentUser, onSaved }: {
       const r = await coachRequest(body, authorized, consentUser);
       if (r.kind !== "session") throw new Error("Unexpected answer from the Coach.");
       setResult(r); if (r.saved) onSaved();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+    } catch (e) { setError(friendlyMessage(e, "The evaluation could not be completed", { scope: "coach.evaluator" })); } finally { setBusy(false); }
   }
   const canRun = source === "imported" ? activityId !== "" : m.duration.trim() !== "";
 

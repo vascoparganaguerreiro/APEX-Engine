@@ -33,7 +33,7 @@ export default function TodayView({ result, latest, goal, today, trend }: {
       {stale && (
         <div className="notice">
           {latest ? `No wellness data for today yet (latest: ${latest.day}).` : "No wellness data yet."}{" "}
-          Sync Intervals.icu on the <Link href="/import" style={{ color: "var(--green)" }}>Import page</Link>, or log a day below.
+          Sync Intervals.icu on the <Link href="/integrations" style={{ color: "var(--green)" }}>Connections page</Link>, or log a day below.
         </div>
       )}
 
@@ -110,7 +110,7 @@ export default function TodayView({ result, latest, goal, today, trend }: {
             ) : (
               <div className="card chart">
                 <b>Fitness, fatigue and form</b>
-                <p className="muted small">Needs activities with a training load. Sync them on the <Link href="/import" style={{ color: "var(--green)" }}>Import page</Link>.</p>
+                <p className="muted small">Needs activities with a training load. Sync them on the <Link href="/integrations" style={{ color: "var(--green)" }}>Connections page</Link>.</p>
               </div>
             )}
           </div>

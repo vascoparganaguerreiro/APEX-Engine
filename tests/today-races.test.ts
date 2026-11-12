@@ -84,9 +84,9 @@ test("the race card uses the same next-race rule as the Races page; completed an
   assert.equal(nextRaceInfo(null, TODAY), null);
 });
 
-test("wiring: Today uses the compatible loader; the Races page keeps its own listRaces", () => {
+test("wiring: Today and the Races page both use the compatible loader", () => {
   const load = readFileSync(new URL("../lib/today/load.ts", import.meta.url), "utf8");
   assert.match(load, /listRacesCompat\(getSupabase\(\)\)/);
   assert.ok(!/Races need a database update/.test(load), "the false migration warning is gone");
-  assert.match(readFileSync(new URL("../app/(app)/races/page.tsx", import.meta.url), "utf8"), /listRaces\(getSupabase\(\)\)/);
+  assert.match(readFileSync(new URL("../app/(app)/races/page.tsx", import.meta.url), "utf8"), /listRacesCompat\(getSupabase\(\)\)/);
 });

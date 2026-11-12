@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { errText, fmtMin, sdb } from "@/lib/strength/hooks";
 import { NotSetUp, activitySources, keepSeparate, loadDecisions, loadLinks, mergeSources, revertDecision, strengthSources, unmerge } from "@/lib/strength/data";
-import { findCandidates, interval, mergedView, sourceLabel, trainingItems, type Candidate, type Link, type Source, type TrainingItem } from "@/lib/strength/dedup";
+import { displayDurationS, findCandidates, interval, mergedView, sourceLabel, trainingItems, type Candidate, type Link, type Source, type TrainingItem } from "@/lib/strength/dedup";
 import { SetupNotice, StrengthNav } from "@/components/strength/Bits";
 
 const t = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -14,7 +14,7 @@ function Side({ s }: { s: Source }) {
       <div className="factrow"><span className="muted">Name</span><b>{s.title ?? "–"}</b></div>
       <div className="factrow"><span className="muted">Start</span><b>{t(s.startedAt)}</b></div>
       <div className="factrow"><span className="muted">End</span><b>{i.end ? t(new Date(i.end).toISOString()) : "not recorded"}</b></div>
-      <div className="factrow"><span className="muted">Duration</span><b>{i.end ? fmtMin(Math.round((i.end - i.start) / 1000)) : "–"}</b></div>
+      <div className="factrow"><span className="muted">Duration</span><b>{fmtMin(displayDurationS(s))}</b></div>
       {s.kind === "activity" ? <>
         <div className="factrow"><span className="muted">Heart rate</span><b>{s.avgHr ? `avg ${s.avgHr}${s.maxHr ? `, max ${s.maxHr}` : ""} bpm` : "not available"}</b></div>
         <div className="factrow"><span className="muted">Calories</span><b>{s.calories ?? "–"}</b></div>

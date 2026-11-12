@@ -7,7 +7,10 @@ import * as store from "@/lib/connectionStore";
 /** The one server-side privileged client (service role). Import only from route handlers. */
 export function adminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new store.ConnectionError(500, "The server is missing SUPABASE_SERVICE_ROLE_KEY.");
+  if (!url || !key) {
+    console.error("[apex] server configuration incomplete: the privileged database key is not set for this deployment");   // operator log only; the person using the app gets a neutral message
+    throw new store.ConnectionError(500, "This service isn't available right now. Please try again later.");
+  }
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 

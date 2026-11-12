@@ -8,9 +8,14 @@ type Msg = { kind: "ok" | "error"; text: string } | null;
 type Busy = "connect" | "disconnect" | "sync" | null;
 
 const SYNC_DAYS = 120;
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e));
+import { friendlyMessage } from "@/lib/userError";
+const errMsg = (e: unknown) => friendlyMessage(e, "That could not be completed", { scope: "intervals" });
 
-export default function IntervalsCard() {
+/** The Intervals.icu API-key connection (Athlete ID + API key), status, sync and disconnect. This is the ONLY place where it is configured: it
+ *  lives inside the Intervals.icu card of the Connectivity Centre (/integrations) with `embedded`, which drops this component's own heading,
+ *  status badge and last-sync figure (the card around it already shows them). `onChange` tells the page to refresh after a connect, sync or
+ *  disconnect. Logic, API routes and credential handling are unchanged: the key is sent to the server once and never read back. */
+export default function IntervalsCard({ embedded = false, onChange }: { embedded?: boolean; onChange?: () => void } = {}) {
   const [conn, setConn] = useState<Conn | null | undefined>(undefined); // undefined = loading
   const [athleteId, setAthleteId] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -20,7 +25,7 @@ export default function IntervalsCard() {
   const load = useCallback(async () => {
     // Only non-secret columns: the browser just needs to know that a connection exists.
     const { data, error } = await getSupabase().from("intervals_connections").select("athlete_id,last_sync_at").maybeSingle();
-    if (error) { setMsg({ kind: "error", text: error.message }); setConn(null); return; }
+    if (error) { setMsg({ kind: "error", text: errMsg(error) }); setConn(null); return; }
     setConn((data as Conn | null) ?? null);
   }, []);
 
@@ -33,7 +38,7 @@ export default function IntervalsCard() {
       const r = await connectIntervals(athleteId, apiKey);
       setApiKey("");
       setMsg({ kind: "ok", text: `Connected${r.athlete.name ? ` as ${r.athlete.name}` : ""}.` });
-      await load();
+      await load(); onChange?.();
     } catch (err) {
       setMsg({ kind: "error", text: errMsg(err) });
     } finally { setBusy(null); }
@@ -45,7 +50,7 @@ export default function IntervalsCard() {
     try {
       await disconnectIntervals();
       setMsg({ kind: "ok", text: "Disconnected." });
-      await load();
+      await load(); onChange?.();
     } catch (err) {
       setMsg({ kind: "error", text: errMsg(err) });
     } finally { setBusy(null); }
@@ -57,7 +62,7 @@ export default function IntervalsCard() {
     try {
       const r = await syncIntervals(full ? SYNC_DAYS : undefined);
       setMsg({ kind: "ok", text: `Synced ${r.incremental ? "new data" : `the last ${r.days} days`} (${r.oldest} to ${r.newest}): ${r.activities} activities and ${r.wellness} wellness days.${r.notes?.length ? " " + r.notes.join(" ") : ""}` });
-      await load();
+      await load(); onChange?.();
     } catch (err) {
       setMsg({ kind: "error", text: errMsg(err) });
     } finally { setBusy(null); }
@@ -65,13 +70,16 @@ export default function IntervalsCard() {
 
   const connected = !!conn;
   return (
-    <div className="card">
-      <div className="act-head">
-        <h2 style={{ margin: 0 }}>Intervals.icu</h2>
-        {conn === undefined
-          ? <span className="muted small">Loading…</span>
-          : <span className="badge" style={connected ? undefined : { color: "var(--muted)" }}>{connected ? "Connected" : "Not connected"}</span>}
-      </div>
+    <div className={embedded ? undefined : "card"} style={embedded ? { marginTop: 10 } : undefined}>
+      {!embedded && (
+        <div className="act-head">
+          <h2 style={{ margin: 0 }}>Intervals.icu</h2>
+          {conn === undefined
+            ? <span className="muted small">Loading…</span>
+            : <span className="badge" style={connected ? undefined : { color: "var(--muted)" }}>{connected ? "Connected" : "Not connected"}</span>}
+        </div>
+      )}
+      {embedded && conn === undefined && <p className="muted small">Loading…</p>}
 
       {msg && <div className={`notice ${msg.kind}`} role={msg.kind === "error" ? "alert" : "status"}>{msg.text}</div>}
 
@@ -79,7 +87,7 @@ export default function IntervalsCard() {
         <>
           <div className="metrics">
             <div><small>Athlete ID</small><b>{conn.athlete_id}</b></div>
-            <div><small>Last sync</small><b>{conn.last_sync_at ? new Date(conn.last_sync_at).toLocaleString() : "Never"}</b></div>
+            {!embedded && <div><small>Last sync</small><b>{conn.last_sync_at ? new Date(conn.last_sync_at).toLocaleString() : "Never"}</b></div>}
           </div>
           <div className="row">
             <button className="btn" onClick={() => sync(false)} disabled={busy !== null}>

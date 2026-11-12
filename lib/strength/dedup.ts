@@ -1,6 +1,7 @@
 // Duplicate detection and canonical training sessions (Garmin / Intervals / Strava activities vs APEX or Hevy strength sessions).
 // Pure (no I/O). Source records are never modified: a merge only links them to one canonical session (see 13_strength.sql).
 import { localDay } from "../activities.ts";
+import { durationSeconds } from "./analytics.ts";
 
 export interface ActivitySource {
   kind: "activity"; id: number; startedAt: string; durationS: number | null; elapsedS: number | null; sport: string; title: string | null;
@@ -8,7 +9,10 @@ export interface ActivitySource {
 }
 export interface StrengthSource {
   kind: "strength"; id: string; startedAt: string; endedAt: string | null; title: string; source: "apex" | "hevy_csv";
+  /** Working exercises and working sets only (completed, not warm-up): see workingExercises / workingSetCount in analytics.ts. */
   exercises: number; sets: number; exerciseNames: string[];
+  /** Seconds the workout was paused. Optional so older callers and fixtures keep working (treated as 0). */
+  pausedS?: number;
 }
 export type Source = ActivitySource | StrengthSource;
 export interface Link { trainingSessionId: string; activityId: number | null; strengthSessionId: string | null; role: "primary" | "secondary" }
@@ -22,6 +26,13 @@ export function interval(s: Source): { start: number; end: number | null } {
   const start = Date.parse(s.startedAt);
   if (s.kind === "activity") { const d = s.elapsedS ?? s.durationS; return { start, end: d && d > 0 ? start + d * 1000 : null }; }
   return { start, end: s.endedAt ? Date.parse(s.endedAt) : null };
+}
+/** The duration to SHOW for a record. An activity keeps its own; a strength log shows the time actually worked (start to end minus paused
+ *  seconds), computed by the same durationSeconds that Strength and Today use. interval() stays wall-clock: overlap matching needs that. */
+export function displayDurationS(s: Source): number | null {
+  if (s.kind === "strength") return durationSeconds({ startedAt: s.startedAt, endedAt: s.endedAt, pausedSeconds: s.pausedS ?? 0 });
+  const i = interval(s);
+  return i.end === null ? null : Math.round((i.end - i.start) / 1000);
 }
 const BRAND: Array<[string, string]> = [["GARMIN", "Garmin"], ["STRAVA", "Strava"], ["COROS", "COROS"], ["POLAR", "Polar"], ["SUUNTO", "Suunto"], ["ZEPP", "Amazfit/Zepp"], ["WHOOP", "WHOOP"], ["WAHOO", "Wahoo"], ["HUAWEI", "Huawei"]];
 const originLabel = (o: string | null) => { const v = (o ?? "").toUpperCase(); return BRAND.find(([k]) => v.includes(k))?.[1] ?? (v ? v.toLowerCase() : "Intervals.icu"); };
@@ -92,7 +103,7 @@ export interface MergedView {
 export function mergedView(a: Source, b: Source, primary: Source): MergedView {
   const act = [a, b].find((s): s is ActivitySource => s.kind === "activity") ?? null;
   const str = [a, b].find((s): s is StrengthSource => s.kind === "strength") ?? null;
-  const dur = (s: Source) => { const i = interval(s); return i.end === null ? null : Math.round((i.end - i.start) / 1000); };
+  const dur = displayDurationS;
   const lab = sourceLabel;
   return {
     title: { value: (primary.kind === "activity" ? primary.title : primary.title) ?? "Training session", source: lab(primary) },
@@ -159,13 +170,12 @@ export function trainingItems(sources: Source[], links: Link[]): TrainingItem[] 
   return out.sort((x, y) => Date.parse(y.startedAt) - Date.parse(x.startedAt));
 }
 function itemOf(primary: Source, members: Source[], key: string): TrainingItem {
-  const i = interval(primary);
   const str = members.find((m): m is StrengthSource => m.kind === "strength");
   const act = members.find((m): m is ActivitySource => m.kind === "activity");
   const detail = [str ? `${str.exercises} exercises, ${str.sets} sets` : null, act?.avgHr ? `avg HR ${act.avgHr}` : null, act?.load ? `load ${act.load}` : null].filter(Boolean).join(" · ");
   return {
     key, startedAt: primary.startedAt, title: (primary.kind === "activity" ? primary.title : primary.title) ?? "Training", sport: primary.kind === "strength" ? "strength" : primary.sport,
-    durationS: i.end === null ? null : Math.round((i.end - i.start) / 1000), sources: members.map(sourceLabel), merged: members.length > 1,
+    durationS: displayDurationS(primary), sources: members.map(sourceLabel), merged: members.length > 1,
     href: str ? `/strength/history/${str.id}` : act ? "/activities" : null, detail,
   };
 }

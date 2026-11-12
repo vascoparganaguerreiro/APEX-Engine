@@ -34,7 +34,7 @@ export interface FlowDeps {
 
 export async function runExtraction(deps: FlowDeps, consentHeader: string | null): Promise<Record<string, unknown>> {
   if (consentHeader !== "yes") throw new ExtractError(400, "Confirm that you agree to send this report for automatic reading.");
-  if (!deps.geminiConfigured) throw new ExtractError(503, "Automatic reading is not set up (GEMINI_API_KEY is missing on the server). You can still enter results manually.");
+  if (!deps.geminiConfigured) throw new ExtractError(503, "Automatic reading isn't available right now. You can still enter results manually.");
 
   const q = await deps.consume();                                              // before any file processing or AI call
   if (!q.allowed) {

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { friendlyMessage } from "@/lib/userError";
 import {
   DOSE_UNITS, FORMULATIONS, SLOTS, SLOT_LABEL, WEEKDAYS, emptySlots, slotRows, slotsFrom, validateSchedule, validateSupplement,
   type Slot, type SlotDraft, type SlotDrafts, type Supplement,
@@ -39,7 +40,7 @@ export default function SupplementForm({ initial, initialSlots, today, onSave, o
     const v = validateSupplement(sup) ?? validateSchedule(slotRows(slots));
     if (v) { setErr(v); return; }
     setErr(null); setBusy(true);
-    try { await onSave(sup, slots); } catch (x) { setErr(x instanceof Error ? x.message : String(x)); } finally { setBusy(false); }
+    try { await onSave(sup, slots); } catch (x) { setErr(friendlyMessage(x, "The supplement could not be saved", { scope: "health.supplement" })); } finally { setBusy(false); }
   }
 
   return (

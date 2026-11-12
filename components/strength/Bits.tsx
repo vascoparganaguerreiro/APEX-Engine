@@ -20,8 +20,8 @@ export function StrengthNav() {
 export function SetupNotice({ what = "This page" }: { what?: string }) {
   return (
     <div className="notice">
-      <b>Strength Hub database not set up yet.</b> {what} needs migration <code>13_strength.sql</code>, which has not been applied. Workouts you log are still kept safely
-      on this device and will upload automatically once the migration is applied.
+      <b>Cloud saving isn&apos;t set up for your account yet.</b> {what} isn&apos;t available until it is. Ask the person who runs APEX. Workouts you log are still kept safely
+      on this device and will upload automatically once it is set up.
     </div>
   );
 }

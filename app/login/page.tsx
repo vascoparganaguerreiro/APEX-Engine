@@ -1,8 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getSupabase } from "@/lib/supabase";
+import { getSupabase, setRememberMe } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
+import PasswordField from "@/components/PasswordField";
+import { friendlyMessage } from "@/lib/userError";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -10,6 +13,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);       // on by default: this is how the app already behaved
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
 
@@ -27,6 +31,7 @@ export default function LoginPage() {
     setBusy(true);
     try {
       const sb = getSupabase();
+      setRememberMe(remember);          // only the choice is stored (never the password): where this session lives, including its token refreshes
       if (mode === "in") {
         const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
         if (error) setMessage({ kind: "error", text: "Sign-in failed. Check your email and password." });
@@ -39,7 +44,7 @@ export default function LoginPage() {
         }
       }
     } catch (err) {
-      setMessage({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+      setMessage({ kind: "error", text: friendlyMessage(err, "Sign-in failed", { scope: "login" }) });
     } finally {
       setBusy(false);
     }
@@ -60,14 +65,17 @@ export default function LoginPage() {
         <label>{mode === "in" ? "Email" : "Invited email"}
           <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
-        <label>{mode === "in" ? "Password" : "Choose a password (min. 8 characters)"}
-          <input type="password" required autoComplete={mode === "in" ? "current-password" : "new-password"}
-            value={password} onChange={(e) => setPassword(e.target.value)} />
+        <PasswordField label={mode === "in" ? "Password" : "Choose a password (min. 8 characters)"} value={password} onChange={setPassword}
+          autoComplete={mode === "in" ? "current-password" : "new-password"} />
+        <label className="remember">
+          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+          <span>Remember me<small>Stay signed in on this device. Untick it on a shared or public computer.</small></span>
         </label>
         <button className="btn" disabled={busy || !!setupError} type="submit">
           {busy ? "Please wait…" : mode === "in" ? "Sign in" : "Create account"}
         </button>
         {message && <div className={`notice ${message.kind}`}>{message.text}</div>}
+        {mode === "in" && <Link className="linkbtn" href="/forgot-password" style={{ display: "inline-flex", alignItems: "center", minHeight: 44, fontSize: 14 }}>Forgot password?</Link>}
       </form>
     </main>
   );

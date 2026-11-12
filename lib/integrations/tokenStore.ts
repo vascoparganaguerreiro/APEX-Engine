@@ -25,14 +25,14 @@ export async function saveTokens(db: Db, ops: CryptoOps, uid: string, provider: 
   const prev = await db.from(CRED).select("rev").eq("user_id", uid).eq("provider", provider).maybeSingle();
   const rev = (prev.data?.rev ?? 0) + 1;
   const w = await db.from(CRED).upsert({ user_id: uid, provider, ...encryptSet(ops, uid, provider, t), rev, updated_at: now.toISOString() }, { onConflict: "user_id,provider" });
-  if (w.error) throw new TokenStoreError("Could not store the connection securely (did you run 14_universal_connect.sql?).");
+  if (w.error) throw new TokenStoreError("Could not store the connection securely. Please try again later.");
   const back = await loadTokens(db, ops, uid, provider).catch(() => null);
-  if (!back || back.accessToken !== t.accessToken) throw new TokenStoreError("Could not verify the stored connection. Check the encryption settings.");
+  if (!back || back.accessToken !== t.accessToken) throw new TokenStoreError("Could not verify the stored connection. Please try again later.");
 }
 
 export async function loadTokens(db: Db, ops: CryptoOps, uid: string, provider: string): Promise<StoredTokens | null> {
   const r = await db.from(CRED).select("access_token_enc,refresh_token_enc,expires_at,rev,scopes").eq("user_id", uid).eq("provider", provider).maybeSingle();
-  if (r.error) throw new TokenStoreError("Could not read the connection (did you run 14_universal_connect.sql?).");
+  if (r.error) throw new TokenStoreError("Could not read the connection. Please try again later.");
   if (!r.data) return null;
   try {
     return {

@@ -185,7 +185,7 @@ test("user_id always comes from the session, never from the form data", async ()
   await createRace(asUser("alice"), "alice", evil);
   assert.equal(rows[0].user_id, "alice");
   assert.notEqual(rows[0].id, 999);
-  await assert.rejects(createRace(asUser("alice"), "bob", input()), /row-level security/, "a mismatched user id is refused by RLS");
+  await assert.rejects(createRace(asUser("alice"), "bob", input()), (e: Error) => e.name === "SafeError" && /not allowed/.test(e.message) && !/row-level security/.test(e.message), "a mismatched user id is refused by RLS (and reported in plain words)");
   assert.deepEqual(Object.keys(writableRow({ ...input(), user_id: "x", id: 1, created_at: "now" })).sort(),
     ["distance", "distance_unit", "goal", "location", "name", "notes", "priority", "race_date", "race_type", "sport", "status", "target_time_s"]);
   assert.equal(isRaceId("12"), true);

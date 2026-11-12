@@ -9,7 +9,6 @@ const NAV = [
   { href: "/today", label: "Today" },
   { href: "/activities", label: "Activities" },
   { href: "/strength", label: "Strength" },
-  { href: "/import", label: "Import" },
   { href: "/integrations", label: "Connections" },
   { href: "/training", label: "Training", soon: true },
   { href: "/coach", label: "Coach" },
@@ -49,7 +48,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             ),
           )}
         </nav>
-        <button className="btn ghost" onClick={() => getSupabase().auth.signOut()}>Sign out</button>
+        {/* scope "local": signs out THIS device only. The default ("global") would also sign out your phone and every other device. */}
+        <button className="btn ghost" onClick={() => getSupabase().auth.signOut({ scope: "local" })}>Sign out</button>
       </aside>
       <main className="main">{children}</main>
     </div>

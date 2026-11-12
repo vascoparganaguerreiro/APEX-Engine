@@ -1,5 +1,6 @@
 import { getSupabase } from "./supabase";
 import { consentRequestHeaders } from "./consentOwner";
+import { apiError } from "./userError";
 
 export type SummarizeRequest = { kind: "activity"; id: number } | { kind: "week"; weekStart: string };
 
@@ -19,7 +20,7 @@ async function post<T>(path: string, body?: unknown, method = "POST"): Promise<T
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error ?? `Request failed (${r.status})`);
+  if (!r.ok) throw apiError(r.status, j);
   return j as T;
 }
 
@@ -37,7 +38,7 @@ export async function summarize(body: SummarizeRequest, categories: string[], co
     body: JSON.stringify({ ...body, categories }),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error ?? `Request failed (${r.status})`);
+  if (!r.ok) throw apiError(r.status, j);
   return j as SummarizeResult;
 }
 
@@ -79,7 +80,7 @@ export async function integrationConfig(): Promise<{ configured: string[] }> {
   if (!token) throw new Error("Please sign in again.");
   const r = await fetch("/api/integrations", { headers: { Authorization: `Bearer ${token}` } });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error ?? `Request failed (${r.status})`);
+  if (!r.ok) throw apiError(r.status, j);
   return j as { configured: string[] };
 }
 
@@ -98,7 +99,7 @@ export async function extractReport(file: File): Promise<ReportExtractResult> {
   form.append("file", file);
   const r = await fetch("/api/biomarkers/extract", { method: "POST", headers: { Authorization: `Bearer ${token}`, "X-Report-Consent": "yes" }, body: form });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error ?? `Request failed (${r.status})`);
+  if (!r.ok) throw apiError(r.status, j);
   return j as ReportExtractResult;
 }
 
@@ -115,6 +116,6 @@ export async function coachRequest(body: Record<string, unknown>, categories: st
     body: JSON.stringify({ ...body, categories, today: new Date().toLocaleDateString("sv-SE") }),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error ?? `Request failed (${r.status})`);
+  if (!r.ok) throw apiError(r.status, j);
   return j as CoachApiResult;
 }

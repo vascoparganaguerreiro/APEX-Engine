@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { coachRequest } from "@/lib/api";
+import { friendlyMessage } from "@/lib/userError";
 import { useAuth } from "@/lib/useAuth";
 import { validUid, type ConsentStorage } from "@/lib/coach/consentStore";
 import { EMPTY_ASK_STATE, askConsentView, loadAskConsent, saveAskConsent, type AskConsent, type AskConsentState } from "@/lib/strength/askConsentStore";
@@ -62,7 +63,7 @@ export default function AskApex({ open, onClose, w, snapshot, save, custom }: {
       setMsgs((m) => [...m, { role: "assistant", text: r.answer, proposals: (r.proposals ?? []).map((p) => ({ ...p, state: "open" as const })) }]);
       speak(r.answer);
     } catch (e) {
-      setMsgs((m) => [...m, { role: "system", text: e instanceof Error ? e.message : String(e) }]);
+      setMsgs((m) => [...m, { role: "system", text: friendlyMessage(e, "Ask APEX could not answer", { scope: "strength.ask" }) }]);
     } finally { setBusy(false); }
   }
 
@@ -73,7 +74,7 @@ export default function AskApex({ open, onClose, w, snapshot, save, custom }: {
       save(applyProposal(w, p.action, { newId, custom }));
       setMsgs((m) => m.map((x, i) => (i !== mi ? x : withState(x, pi, "applied"))).concat({ role: "system", text: `Applied to your workout: ${p.summary}.` }));
     } catch (e) {
-      setMsgs((m) => [...m, { role: "system", text: `Not applied: ${e instanceof Error ? e.message : String(e)}` }]);
+      setMsgs((m) => [...m, { role: "system", text: `Not applied: ${friendlyMessage(e, "That change could not be made", { scope: "strength.ask.apply" })}` }]);
     }
   }
   const dismiss = (mi: number, pi: number) => setMsgs((m) => m.map((x, i) => (i !== mi ? x : withState(x, pi, "dismissed"))));

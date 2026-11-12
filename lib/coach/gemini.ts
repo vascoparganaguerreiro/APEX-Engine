@@ -66,7 +66,7 @@ async function discover(cfg: GeminiConfig, f: typeof fetch, timeoutMs: number): 
 
 type Mode = { json: boolean };
 async function call(cfg: GeminiConfig, req: { system: string; user: string; maxOutputTokens?: number; temperature?: number }, mode: Mode): Promise<GeminiResult> {
-  if (!cfg.apiKey) throw new GeminiError("config", "The AI is not set up: GEMINI_API_KEY is missing on the server.");
+  if (!cfg.apiKey) throw new GeminiError("config", "The AI assistant isn't available right now. Please try again later.");
   const f = cfg.fetch ?? fetch, now = cfg.now ?? Date.now, log = cfg.log ?? defaultLog;
   const t0 = now(), deadline = cfg.deadline ?? t0 + COACH_BUDGET_MS, perModel = cfg.timeoutMs ?? PER_MODEL_TIMEOUT_MS, cap = cfg.maxAttempts ?? 4;
   const remaining = () => deadline - now();

@@ -30,6 +30,10 @@ const EPS = 1e-6;
 
 /** Completed sets that count as work (warm-ups never count). */
 export const workSets = (e: HExercise) => e.sets.filter((s) => s.completed && COUNTS_AS_WORK[s.type]);
+/** Working sets of a whole session. The one definition Strength, Today and the Timeline all count with. */
+export const workingSetCount = (s: Pick<HSession, "exercises">): number => s.exercises.reduce((n, e) => n + workSets(e).length, 0);
+/** Exercises with at least one working set: an exercise that only has warm-ups or unfinished sets is not counted. */
+export const workingExercises = (s: Pick<HSession, "exercises">): HExercise[] => s.exercises.filter((e) => workSets(e).length > 0);
 
 export interface BestSet { weight: number; unit: WeightUnit; weightKg: number; reps: number; e1rmKg: number | null }
 /** Best set of an exercise in a session: highest estimated 1RM; when nothing is estimable, the heaviest weight then the most reps.

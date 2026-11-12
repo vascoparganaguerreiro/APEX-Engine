@@ -7,6 +7,7 @@ import {
   BASE_RACE_COLUMNS, RACE_COLUMNS, RACE_HUB_COLUMNS, STATUSES, isMissingRaceHubColumn, listRacesCompat, nextUpcomingRace,
   nextUpcomingRaceStrict, splitRaces, raceFromRow, type Db,
 } from "../lib/races.ts";
+import { SafeError } from "../lib/userError.ts";
 import { runSummary, summaryConsent, type Row, type SummaryDeps } from "../lib/summaryService.ts";
 
 type R = Record<string, unknown>;
@@ -200,14 +201,15 @@ for (const [name, e] of [["network failure", ERR.network], ["timeout", ERR.timeo
   ["invalid token", ERR.jwtInvalid], ["unrelated database failure (no table)", ERR.noTable], ["missing non-Race-Hub column", ERR.otherColumn], ["error without a code", ERR.noCode]] as const) {
   test(`listRacesCompat: ${name} is reported as an error and does NOT trigger the legacy query`, async () => {
     const db = fakeDb([hub({})], { hub: true, fail: (c) => (c === RACE_COLUMNS ? e : null) });
-    await assert.rejects(listRacesCompat(db), (err: Error) => err.message === e.message);
+    // reported (not hidden by the legacy query) as a friendly SafeError: the raw database text is never the message
+    await assert.rejects(listRacesCompat(db), (err: Error) => err instanceof SafeError && err.message !== e.message && !/permission denied|fetch failed|JWT|relation|column races|statement timeout/i.test(err.message));
     assert.deepEqual(db.selects, [RACE_COLUMNS], "only the full query ran");
   });
 }
 
 test("listRacesCompat: a persistent failure of the legacy query is reported", async () => {
   const db = fakeDb([], { hub: false, fail: (c) => (c === BASE_RACE_COLUMNS ? ERR.permission : null) });
-  await assert.rejects(listRacesCompat(db), /permission denied/);
+  await assert.rejects(listRacesCompat(db), (err: Error) => err instanceof SafeError && /not allowed/.test(err.message) && !/permission denied/.test(err.message));
   assert.deepEqual(db.selects, [RACE_COLUMNS, BASE_RACE_COLUMNS]);
 });
 

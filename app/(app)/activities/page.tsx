@@ -4,6 +4,7 @@ import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
 import { summarize } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
+import { friendlyMessage } from "@/lib/userError";
 import {
   SPORT_LABEL, addDaysIso, filterActivities, formatDistance, formatDuration, localDay, summarizeActivities,
   weekStart, weekTotals, type Activity,
@@ -15,8 +16,7 @@ import { loadExcludedActivityIds } from "@/lib/strength/dedup";
 import { authorizedOf, useConsent } from "@/components/coach/consent";
 
 const COLS = "id,started_at,sport,title,duration_s,distance_m,avg_hr,load,note,ai_summary,ai_summary_at";
-const errMsg = (e: unknown) =>
-  e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e);
+const errMsg = (e: unknown) => friendlyMessage(e, "That could not be completed", { scope: "activities" });
 
 export default function ActivitiesPage() {
   const { session } = useAuth();
@@ -74,7 +74,7 @@ export default function ActivitiesPage() {
 
   async function saveNote(id: number, note: string) {
     const { error: err } = await getSupabase().from("activities").update({ note: note || null }).eq("id", id);
-    if (err) { setError(err.message); return; }
+    if (err) { setError(errMsg(err)); return; }
     setActs((prev) => (prev ?? []).map((a) => (a.id === id ? { ...a, note: note || null } : a)));
   }
 

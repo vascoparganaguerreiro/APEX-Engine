@@ -39,7 +39,7 @@ export async function runIntervalsSync(a: {
     let wellness = 0;
     if (r.wellness.length) {
       const { data, error } = await a.user.rpc("apply_synced_metrics", { p_rows: r.wellness });
-      if (error) throw new SyncFailure(500, "Could not save wellness data (did you run 06_metric_provenance.sql?).");
+      if (error) throw new SyncFailure(500, "Could not save your wellness data. Please try again in a moment.");
       wellness = Number(data ?? 0);
     }
 
@@ -56,7 +56,7 @@ export async function runIntervalsSync(a: {
     }
 
     const obs = await saveObservations(a.user, a.uid, r.observations, now);
-    if (obs.notSetUp) notes.push("Extra wellness fields (VO2 max, SpO2, readiness, steps…) are kept once migration 14 is applied.");
+    if (obs.notSetUp) notes.push("Extra wellness fields (VO2 max, SpO2, readiness, steps…) are kept once your account has connection support set up.");
     else if (obs.failed) notes.push("Extra wellness fields could not be saved this time; the main data was saved.");
     if (r.skippedStrava) notes.push(`${r.skippedStrava} Strava-recorded activit${r.skippedStrava === 1 ? "y was" : "ies were"} skipped: Intervals.icu does not share Strava data through its API.`);
     if (r.skippedNoTime) notes.push(`${r.skippedNoTime} activit${r.skippedNoTime === 1 ? "y has" : "ies have"} no usable start time and ${r.skippedNoTime === 1 ? "was" : "were"} skipped.`);

@@ -7,7 +7,7 @@ import { getEngine, newId } from "@/lib/strength/runtime";
 import { useHistory, useLibrary, useRoutines, fmtClock, fmtMin, errText } from "@/lib/strength/hooks";
 import { TEMPLATES, fromTemplate, toPlan, type Routine } from "@/lib/strength/routines";
 import { snapshotOf } from "@/lib/strength/actions";
-import { durationSeconds, workSets } from "@/lib/strength/analytics";
+import { durationSeconds, workingExercises, workingSetCount } from "@/lib/strength/analytics";
 import { EQUIPMENT, EQUIPMENT_LABEL, type Equipment } from "@/lib/strength/types";
 import { currentExercise, elapsedSeconds, finish, nextExercise, pause, progress, resume, setDetails, startWorkout, type Workout } from "@/lib/strength/workout";
 import type { SyncEngine } from "@/lib/strength/sync";
@@ -176,7 +176,7 @@ export default function StrengthPage() {
           {recent.map((s) => (
             <Link key={s.id} href={`/strength/history/${s.id}`} className="doserow" style={{ textDecoration: "none", color: "inherit" }}>
               <span className="muted small tl-date">{s.startedAt.slice(0, 10)}</span>
-              <span style={{ flex: 1 }}><b>{s.title}</b><span className="muted small"> · {s.exercises.length} exercises · {s.exercises.reduce((n, e) => n + workSets(e).length, 0)} working sets · {fmtMin(durationSeconds(s))}</span></span>
+              <span style={{ flex: 1 }}><b>{s.title}</b><span className="muted small"> · {workingExercises(s).length} exercises · {workingSetCount(s)} working sets · {fmtMin(durationSeconds(s))}</span></span>
               {s.source === "hevy_csv" && <span className="badge off">Hevy</span>}
             </Link>
           ))}

@@ -27,7 +27,7 @@ export async function runWhoopSync(a: { admin: Db; user: UserDb; ops: CryptoOps;
     const notes: string[] = [];
 
     const saved = await saveObservations(a.user, a.uid, batch.observations, now);
-    if (saved.notSetUp) throw Object.assign(new Error("Connections need a database update (migration 14)."), { status: 503 });
+    if (saved.notSetUp) throw Object.assign(new Error("Connections aren't set up on your account yet. Ask the person who runs APEX."), { status: 503 });
     if (saved.failed) throw Object.assign(new Error("Could not save the WHOOP data."), { status: 500 });
 
     let dailyFilled = 0;

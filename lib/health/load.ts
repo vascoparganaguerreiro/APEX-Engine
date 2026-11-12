@@ -1,5 +1,6 @@
 // Browser-side loaders shared by the biomarker pages. Uses the signed-in user's client, so RLS limits every query to their rows.
 import { getSupabase } from "@/lib/supabase";
+import { friendlyMessage } from "@/lib/userError";
 import { fetchAll, type Panel, type ResultPoint, type Schedule, type Supplement } from "@/lib/health/core";
 
 type Row = Omit<ResultPoint, "collected_on" | "lab_name"> & { blood_panels: { collected_on: string; lab_name: string | null } | null };
@@ -39,4 +40,4 @@ export async function loadSupplementsAndSchedules(): Promise<{ supplements: Supp
   return { supplements: (s.data ?? []) as Supplement[], schedules: (c.data ?? []) as Schedule[] };
 }
 
-export const errMsg = (e: unknown) => (e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e));
+export const errMsg = (e: unknown) => friendlyMessage(e, "That could not be completed", { scope: "health" });

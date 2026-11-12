@@ -12,7 +12,8 @@ import { buildManualPatch, type MetricRow } from "@/lib/provenance";
 import { SLOT_LABEL } from "@/lib/health/core";
 import { SOURCE_TEXT, shortDate, type SupplementSummary } from "@/lib/today/model";
 
-const errMsg = (e: unknown) => (e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e));
+import { friendlyMessage } from "@/lib/userError";
+const errMsg = (e: unknown) => friendlyMessage(e, "That could not be saved", { scope: "today.quicklog" });
 export type QuickTab = "wellness" | "supplements" | "more";
 
 export default function QuickLog({ open, tab, onTab, onClose, today, uid, sup, intervalsConnected, activeWorkout, onChanged }: {
@@ -56,7 +57,7 @@ function WellnessForm({ today, onSaved }: { today: string; onSaved: () => void }
   // Selecting a day loads what is really saved for it (empty fields for a new day: no invented values).
   const loadDay = useCallback(async (d: string) => {
     const { data, error } = await getSupabase().from("daily_metrics").select("hrv_ms,rhr_bpm,sleep_minutes,sleep_score,hrv_source,rhr_source,sleep_source,sleep_score_source").eq("day", d).maybeSingle();
-    if (error) { setMsg({ kind: "error", text: error.message }); return; }
+    if (error) { setMsg({ kind: "error", text: errMsg(error) }); return; }
     const row = (data as MetricRow | null) ?? null;
     setExisting(row);
     setHrv(row?.hrv_ms != null ? String(row.hrv_ms) : ""); setRhr(row?.rhr_bpm != null ? String(row.rhr_bpm) : "");
@@ -72,7 +73,7 @@ function WellnessForm({ today, onSaved }: { today: string; onSaved: () => void }
     setSaving(true);
     const { error } = await getSupabase().rpc("apply_manual_metrics", { p_day: day, p_hrv: res.patch.hrv_ms ?? null, p_rhr: res.patch.rhr_bpm ?? null, p_sleep_minutes: res.patch.sleep_minutes ?? null });
     setSaving(false);
-    if (error) { setMsg({ kind: "error", text: error.message }); return; }
+    if (error) { setMsg({ kind: "error", text: errMsg(error) }); return; }
     setMsg({ kind: "ok", text: `Saved for ${day === today ? "today" : shortDate(day)}.` });
     await loadDay(day); onSaved();
   }

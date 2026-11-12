@@ -185,7 +185,8 @@ test("missing migration: everything stays queued on the device with a clear mess
   t.mode = "not_set_up";
   const st = await engine.flush();
   assert.equal(st.mode, "not_set_up");
-  assert.match(st.message!, /migration 13/);
+  assert.match(st.message!, /Saved on this device.*isn't set up for your account yet/);
+  assert.ok(!/migration|\.sql/i.test(st.message!), "no migration number is shown");
   assert.equal(st.pending, 3);
   t.mode = "ok";
   assert.equal((await engine.flush()).pending, 0);

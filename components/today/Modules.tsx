@@ -113,7 +113,7 @@ export function EnduranceCard({ s, e, today }: { s: Section<unknown>; e: Enduran
   return (
     <Module title="Endurance" accent="blue" href="/activities" linkText="All activities" className="td-span-3"
       status={e?.last ? <span className="td-pill">{relDay(e.last.day, today)}</span> : null}>
-      {s.status === "unavailable" ? <Unavailable s={s} /> : !e || !e.last ? <Empty>No endurance activities in the last 210 days. Sync Intervals.icu from <Link href="/import">Import</Link>.</Empty> : (
+      {s.status === "unavailable" ? <Unavailable s={s} /> : !e || !e.last ? <Empty>No endurance activities in the last 210 days. Sync Intervals.icu from <Link href="/integrations">Connections</Link>.</Empty> : (
         <>
           <div className="td-headline">
             <b>{e.last.title || e.last.sport}</b>

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabase } from "./supabase";
+import { friendlyMessage } from "./userError";
 
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
@@ -13,7 +14,7 @@ export function useAuth() {
     try {
       sb = getSupabase();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyMessage(e, "The app can't start right now", { scope: "auth.init" }));
       setLoading(false);
       return;
     }

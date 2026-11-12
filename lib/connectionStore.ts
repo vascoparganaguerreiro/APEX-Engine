@@ -33,7 +33,7 @@ async function storeVerified(db: Db, ops: CryptoOps, uid: string, apiKey: string
 }
 
 export async function saveConnection(db: Db, ops: CryptoOps, uid: string, athleteId: string, apiKey: string): Promise<void> {
-  if (!(await storeVerified(db, ops, uid, apiKey))) throw new ConnectionError(500, "Could not store the credentials securely (check the encryption settings and 07_intervals_key_security.sql).");
+  if (!(await storeVerified(db, ops, uid, apiKey))) throw new ConnectionError(500, "Could not store the credentials securely. Please try again later.");
   const c = await db.from(CONN).upsert({ user_id: uid, athlete_id: athleteId, api_key: null }, { onConflict: "user_id" });
   if (c.error) throw new ConnectionError(500, "Could not save the connection.");
 }
@@ -49,13 +49,13 @@ export async function deleteConnection(db: Db, uid: string): Promise<void> {
  *  fails the legacy key is still returned and left in place, so a working connection is never lost. */
 export async function getConnection(db: Db, ops: CryptoOps, uid: string): Promise<Connection | null> {
   const c = await db.from(CONN).select("athlete_id,api_key").eq("user_id", uid).maybeSingle();
-  if (c.error) throw new ConnectionError(500, "Could not read the connection (did you run 07_intervals_key_security.sql?).");
+  if (c.error) throw new ConnectionError(500, "Could not read the connection. Please try again later.");
   if (!c.data) return null;
   const athleteId: string = c.data.athlete_id;
   const legacy: string | null = c.data.api_key ?? null;
 
   const k = await db.from(CRED).select("api_key_enc").eq("user_id", uid).maybeSingle();
-  if (k.error) throw new ConnectionError(500, "Could not read the credentials (did you run 07_intervals_key_security.sql?).");
+  if (k.error) throw new ConnectionError(500, "Could not read the credentials. Please try again later.");
 
   if (k.data?.api_key_enc) {
     try {

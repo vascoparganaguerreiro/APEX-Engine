@@ -17,7 +17,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ provider: stri
     const r = await runWhoopSync({ admin: adminClient(), user: sb, ops: cryptoOps, cfg, uid });
     return Response.json(r, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
-    if (missingTable(e)) return Response.json({ error: "Connections need a database update (migration 14) that has not been applied yet." }, { status: 503 });
+    if (missingTable(e)) return Response.json({ error: "Connections aren't available right now. Please try again later." }, { status: 503 });
     const x = integrationError(e);
     if (x.status >= 500) console.error("integration sync failed", x.status);
     return Response.json({ error: x.message, reauth: x.reauth, retryAt: x.retryAt }, { status: x.status });

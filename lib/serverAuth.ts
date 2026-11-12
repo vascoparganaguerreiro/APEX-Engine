@@ -9,7 +9,10 @@ export async function authUser(req: Request): Promise<{ sb: SupabaseClient; uid:
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) throw new IntervalsError(401, "Please sign in again.");
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL, anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anon) throw new IntervalsError(500, "The server is missing the Supabase settings.");
+  if (!url || !anon) {
+    console.error("[apex] server configuration incomplete: public database settings are not set for this deployment");   // operator log only
+    throw new IntervalsError(500, "This service isn't available right now. Please try again later.");
+  }
   const sb = createClient(url, anon, {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false, autoRefreshToken: false },
@@ -23,7 +26,7 @@ export function errorResponse(e: unknown, label: string): Response {
   if (e instanceof IntervalsError || e instanceof ConnectionError) return Response.json({ error: e.message }, { status: e.status });
   if (e instanceof CryptoConfigError) {
     console.error(label, "encryption is not configured");
-    return Response.json({ error: "The server encryption settings are missing or invalid." }, { status: 500 });
+    return Response.json({ error: "This service isn't available right now. Please try again later." }, { status: 500 });
   }
   console.error(label, e instanceof Error ? e.message : "unknown");
   return Response.json({ error: "Unexpected error." }, { status: 500 });

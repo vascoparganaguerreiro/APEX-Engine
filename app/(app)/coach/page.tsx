@@ -13,7 +13,8 @@ import ChatPanel from "@/components/coach/ChatPanel";
 import SessionEvaluator from "@/components/coach/SessionEvaluator";
 import { DailyCard, SessionCard } from "@/components/coach/AssessmentCards";
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+import { friendlyMessage } from "@/lib/userError";
+const errMsg = (e: unknown) => friendlyMessage(e, "That could not be completed", { scope: "coach" });
 type Tab = "session" | "daily" | "ask" | "plan";
 const TABS: Array<{ id: Tab; title: string; text: string }> = [
   { id: "session", title: "Evaluate a session", text: "Score an imported or described workout, with a transparent breakdown." },
@@ -76,7 +77,7 @@ export default function CoachPage() {
   if (race === null) missing.push("No upcoming race saved.");
   if (profile && !profile.exists) missing.push("No profile saved yet.");
   else if (profile && baselineCount === 0) missing.push("No physiological baselines saved in your profile.");
-  if (profile && !profile.migrated) missing.push("Some profile fields are not available yet (pending database update).");
+  if (profile && !profile.migrated) missing.push("Some profile fields are not available yet (not set up on your account).");
 
   return (
     <>

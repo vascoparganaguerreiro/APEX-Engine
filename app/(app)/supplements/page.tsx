@@ -3,12 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
 import { todayIso } from "@/lib/dates";
+import { friendlyMessage } from "@/lib/userError";
 import {
   SLOT_LABEL, WEEKDAYS, addDay, adherence, dueOn, isIsoDate, type Intake, type Schedule, type Supplement,
 } from "@/lib/health/core";
 import SupplementForm, { slotRows, slotsFrom, type SlotDrafts } from "@/components/health/SupplementForm";
 
-const errMsg = (e: unknown) => (e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e));
+const errMsg = (e: unknown) => friendlyMessage(e, "That could not be completed", { scope: "supplements" });
 interface Revision { id: string; changed_at: string; snapshot: Partial<Supplement> }
 
 export default function SupplementsPage() {

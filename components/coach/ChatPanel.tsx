@@ -6,7 +6,8 @@ import { deleteConversation, listConversations, listMessages, type ConversationR
 import { CATEGORY_INFO, type Category } from "@/lib/coach/schema";
 
 interface Msg { id: string; role: "user" | "assistant"; content: string; meta?: Record<string, unknown>; failed?: boolean }
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+import { friendlyMessage } from "@/lib/userError";
+const errMsg = (e: unknown) => friendlyMessage(e, "The Coach could not answer", { scope: "coach.chat" });
 
 export default function ChatPanel({ intent, suggestions, authorized, consentUser, raceId = null, placeholder }: { intent: "chat" | "plan"; suggestions: string[]; authorized: Category[]; consentUser: string | null; raceId?: number | null; placeholder?: string }) {
   const [convs, setConvs] = useState<ConversationRow[]>([]);

@@ -1,4 +1,5 @@
-// Profile logic. Pure functions, no imports (unit-testable).
+// Profile logic. Pure functions; the only import is the shared safe-error helper (unit-testable).
+import { SafeError, classifyKind, logTechnical } from "./userError.ts";
 //
 // What lives where:
 //  * Profile = slow-moving BASELINES the user owns (body measurements, resting-HR baseline, max HR, VO2max, thresholds).
@@ -21,16 +22,22 @@ export const EXPERIENCE = [
   { value: "advanced", label: "Advanced (3 to 7 years)" }, { value: "elite", label: "Elite / competitive" },
 ] as const;
 
-export type Source = "manual" | "lab" | "garmin" | "intervals";
-export const SOURCE_LABEL: Record<Source, string> = { manual: "Manual", lab: "Lab test", garmin: "Garmin", intervals: "Intervals.icu" };
+export type Source = "manual" | "lab" | "garmin" | "intervals" | "whoop";
+export const SOURCE_LABEL: Record<Source, string> = { manual: "Manual", lab: "Lab test", garmin: "Garmin", intervals: "Intervals.icu", whoop: "WHOOP" };
 export const USER_SOURCES: Source[] = ["manual", "lab"];          // what a person can choose when typing a value in
+/** Sources that come from a device or service. Typing over such a value makes it a manual value again. */
+export const AUTO_SOURCES: readonly Source[] = ["garmin", "intervals", "whoop"];
+/** The source after the user edits a value: a device-taken (or unrecorded) value becomes manual; manual and lab stay as chosen. */
+export const sourceAfterEdit = (cur: Source | undefined): Source => (cur === undefined || AUTO_SOURCES.includes(cur) ? "manual" : cur);
 export const SOURCE_FIELDS = ["weight_kg", "height_cm", "body_fat_pct", "resting_hr", "max_hr", "vo2max", "lthr", "threshold_pace_s_per_km", "ftp_watts"] as const;
 export type SourceField = (typeof SOURCE_FIELDS)[number];
 export type FieldSources = Partial<Record<SourceField, { source: Source; at: string }>>;
 
 export interface Profile {
   id: string; display_name: string | null; timezone: string; units: Units;
-  weight_kg: number | null; height_cm: number | null; max_hr: number | null; ftp_watts: number | null; sleep_goal_h: number;
+  weight_kg: number | null; height_cm: number | null; max_hr: number | null; ftp_watts: number | null;
+  /** The user's own sleep goal in hours, or null when none is stored. No default is invented. */
+  sleep_goal_h: number | null;
   birth_date: string | null; body_fat_pct: number | null; preferred_sports: string[]; primary_goal: string | null; goal_notes: string | null;
   resting_hr: number | null; vo2max: number | null; lthr: number | null; threshold_pace_s_per_km: number | null; experience_level: string | null;
   field_sources: FieldSources;
@@ -43,7 +50,7 @@ const WRITABLE = ["display_name", "timezone", "units", "weight_kg", "height_cm",
 
 // ------------------------------------------------------------------ rows
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
-const isSource = (s: unknown): s is Source => s === "manual" || s === "lab" || s === "garmin" || s === "intervals";
+const isSource = (s: unknown): s is Source => s === "manual" || s === "lab" || s === "garmin" || s === "intervals" || s === "whoop";
 
 export function sourcesFromRow(v: unknown): FieldSources {
   const out: FieldSources = {};
@@ -62,7 +69,7 @@ export function profileFromRow(row: Record<string, unknown> | null, uid: string,
   return {
     id: uid, display_name: (r.display_name as string | null) ?? null, timezone: typeof r.timezone === "string" && r.timezone ? r.timezone : defaultTz,
     units: r.units === "imperial" ? "imperial" : "metric", weight_kg: num(r.weight_kg), height_cm: num(r.height_cm), max_hr: num(r.max_hr), ftp_watts: num(r.ftp_watts),
-    sleep_goal_h: r.sleep_goal_h === undefined || r.sleep_goal_h === null ? 8 : Number(r.sleep_goal_h),
+    sleep_goal_h: r.sleep_goal_h === undefined || r.sleep_goal_h === null || !Number.isFinite(Number(r.sleep_goal_h)) ? null : Number(r.sleep_goal_h),
     birth_date: (r.birth_date as string | null) ?? null, body_fat_pct: num(r.body_fat_pct),
     preferred_sports: Array.isArray(r.preferred_sports) ? (r.preferred_sports as unknown[]).filter((s): s is string => typeof s === "string") : [],
     primary_goal: (r.primary_goal as string | null) ?? null, goal_notes: (r.goal_notes as string | null) ?? null, resting_hr: num(r.resting_hr), vo2max: num(r.vo2max),
@@ -128,10 +135,17 @@ export function draftFromProfile(p: Profile, units: Units = p.units): ProfileDra
     height_cm: units === "metric" ? s(p.height_cm) : "", height_ft: units === "imperial" && ft ? String(ft.ft) : "", height_in: units === "imperial" && ft ? String(ft.inch) : "",
     weight: p.weight_kg === null ? "" : units === "metric" ? String(p.weight_kg) : r1(kgToLb(p.weight_kg)), body_fat: s(p.body_fat_pct),
     resting_hr: s(p.resting_hr), max_hr: s(p.max_hr), vo2max: s(p.vo2max), lthr: s(p.lthr), threshold_pace: formatPace(p.threshold_pace_s_per_km, units),
-    ftp_watts: s(p.ftp_watts), sleep_goal_h: String(p.sleep_goal_h), experience_level: p.experience_level ?? "", primary_goal: p.primary_goal ?? "", goal_notes: p.goal_notes ?? "",
+    ftp_watts: s(p.ftp_watts), sleep_goal_h: s(p.sleep_goal_h), experience_level: p.experience_level ?? "", primary_goal: p.primary_goal ?? "", goal_notes: p.goal_notes ?? "",
     timezone: p.timezone, units, preferred_sports: [...p.preferred_sports],
     sources: Object.fromEntries(SOURCE_FIELDS.filter((f) => p.field_sources[f]).map((f) => [f, p.field_sources[f]!.source])) as Partial<Record<SourceField, Source>>,
   };
+}
+
+/** Typing into a value box (including imperial height, which has two boxes: feet and inches): the text changes, and a value that was taken from
+ *  a device or service (or has no recorded source) becomes a manual value. A source the user chose (manual, lab) is kept. */
+export function editValue(d: ProfileDraft, key: "height_cm" | "height_ft" | "height_in" | "weight" | "body_fat" | "resting_hr" | "max_hr" | "vo2max" | "lthr" | "threshold_pace" | "ftp_watts",
+  field: SourceField, text: string): ProfileDraft {
+  return { ...d, [key]: text, sources: { ...d.sources, [field]: sourceAfterEdit(d.sources[field]) } };
 }
 
 type P<T> = T | null | "bad";
@@ -166,10 +180,11 @@ export function buildProfilePatch(existing: Profile, d: ProfileDraft, nowIso: st
     if (v === "bad") return bad(`${label}: enter a valid number${label === "Resting heart rate" || label === "Maximum heart rate" || label === "Lactate threshold heart rate" || label === "FTP" ? " (whole)" : ""}.`);
   }
   if (pace === "bad") return bad(`Threshold pace must look like 4:35 (minutes:seconds per ${d.units === "imperial" ? "mile" : "km"}).`);
-  if (sleep === null) return bad("Sleep goal is required.");
+  // Optional when none is stored. A stored goal cannot be blanked (the column may not accept an empty value): change it instead.
+  if (sleep === null && existing.sleep_goal_h !== null) return bad("The sleep goal cannot be removed. Enter the number of hours you want instead.");
   const e = range("Height", height as number | null, 80, 250, " cm") ?? range("Weight", weight as number | null, 20, 400, " kg") ?? range("Body fat", fat as number | null, 2, 60, " %")
     ?? range("Resting heart rate", rhr as number | null, 25, 120, " bpm") ?? range("Maximum heart rate", maxhr as number | null, 100, 230, " bpm") ?? range("VO2 max", vo2 as number | null, 10, 95)
-    ?? range("Lactate threshold heart rate", lthr as number | null, 60, 230, " bpm") ?? range("FTP", ftp as number | null, 30, 2000, " W") ?? range("Sleep goal", sleep as number, 4, 12, " hours")
+    ?? range("Lactate threshold heart rate", lthr as number | null, 60, 230, " bpm") ?? range("FTP", ftp as number | null, 30, 2000, " W") ?? range("Sleep goal", sleep as number | null, 4, 12, " hours")
     ?? (pace !== null && (pace < 90 || pace > 1200) ? "Threshold pace is outside a realistic range." : null);
   if (e) return bad(e);
   if (d.birth_date.trim()) {
@@ -198,7 +213,7 @@ export function buildProfilePatch(existing: Profile, d: ProfileDraft, nowIso: st
   if ((existing.display_name ?? "") !== name) patch.display_name = name || null;
   if (existing.timezone !== d.timezone.trim()) patch.timezone = d.timezone.trim();
   if (existing.units !== d.units) patch.units = d.units;
-  if (existing.sleep_goal_h !== sleep) patch.sleep_goal_h = sleep;
+  if (sleep !== null && existing.sleep_goal_h !== sleep) patch.sleep_goal_h = sleep;
   if (!same(next.height_cm, existing.height_cm, 0.3)) patch.height_cm = next.height_cm === null ? null : Math.round(next.height_cm * 10) / 10;
   if (!same(next.weight_kg, existing.weight_kg, 0.06)) patch.weight_kg = next.weight_kg === null ? null : Math.round(next.weight_kg * 100) / 100;
   if (!same(next.max_hr, existing.max_hr, 0)) patch.max_hr = next.max_hr;
@@ -234,7 +249,7 @@ export function buildProfilePatch(existing: Profile, d: ProfileDraft, nowIso: st
 
   if (!migrated) {
     const blocked = NEW_KEYS.filter((k) => k in patch);
-    if (blocked.length) return bad("Some of these fields need the Profile database update (migration 11), which has not been applied yet.");
+    if (blocked.length) return bad("Some of these fields aren't set up on your account yet, so they can't be saved. Ask the person who runs APEX.");
   }
   return { patch };
 }
@@ -248,7 +263,7 @@ export function sourceBadge(p: Profile, f: SourceField): string {
 }
 /** Where a daily measurement came from. Unknown stays unknown (never guessed). */
 export function measuredSource(fieldSource: unknown, rowSource: unknown): Source | "unknown" {
-  for (const c of [fieldSource, rowSource]) if (c === "manual" || c === "intervals" || c === "garmin") return c;
+  for (const c of [fieldSource, rowSource]) if (c === "manual" || c === "intervals" || c === "garmin" || c === "whoop") return c;
   return "unknown";
 }
 
@@ -271,30 +286,70 @@ export function coachContext(p: Profile, today: string) {
 // ------------------------------------------------------------------ data access (every call runs as the signed-in user, so RLS applies)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface Db { from(table: string): any }
-const fail = (e: { message?: string } | null | undefined): never => { throw new Error(e?.message ?? "Request failed"); };
+interface DbError { message?: string; code?: string; status?: number }
+
+/** True ONLY when a query failed because one of the migration 11 columns does not exist: Postgres 42703 ("column profiles.birth_date does not
+ *  exist") or PostgREST PGRST204 ("Could not find the 'field_sources' column of 'profiles' in the schema cache"), naming one of NEW_KEYS.
+ *  Network failures, expired sessions, permission errors and every other error are NOT a missing migration. */
+export function isMissingProfileColumn(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false;
+  const { code, message } = e as DbError;
+  if (code !== "42703" && code !== "PGRST204") return false;
+  const msg = typeof message === "string" ? message : "";
+  return NEW_KEYS.some((c) => new RegExp(`(^|[^a-z0-9_])${c}([^a-z0-9_]|$)`).test(msg));
+}
+
+export type ProfileErrorKind = "network" | "auth" | "permission" | "other";
+/** A load or save that really failed (not a missing migration). `message` is safe to show; `retryable` means "try again" can help. */
+export class ProfileError extends SafeError {
+  constructor(kind: ProfileErrorKind, message: string, retryable = true) { super(kind, message, retryable); this.name = "ProfileError"; }
+}
+/** Same categories as every other screen (lib/userError.ts), with the Profile wording. */
+export function classifyProfileError(e: unknown, action: "load" | "save" = "load"): ProfileError {
+  logTechnical(`profile.${action}`, e);
+  const what = action === "load" ? "Your profile could not be loaded" : "Your profile could not be saved";
+  const kind = classifyKind(e);
+  if (kind === "network") return new ProfileError("network", `${what}: the connection failed. Check your internet connection and try again.`);
+  if (kind === "auth") return new ProfileError("auth", `${what}: your session has expired. Sign in again, then try again.`, false);
+  if (kind === "permission") return new ProfileError("permission", `${what}: this account is not allowed to ${action === "load" ? "read" : "write"} its profile. Nothing was changed.`, false);
+  return new ProfileError("other", `${what}. Please try again in a moment.`);
+}
 
 export async function loadProfile(db: Db, uid: string, defaultTz?: string): Promise<{ profile: Profile; exists: boolean; migrated: boolean }> {
   let res = await db.from("profiles").select(FULL_COLUMNS).eq("id", uid).maybeSingle();
   let migrated = true;
-  if (res.error) { migrated = false; res = await db.from("profiles").select(BASE_COLUMNS).eq("id", uid).maybeSingle(); }
-  if (res.error) fail(res.error);
+  if (res.error) {
+    // Only a genuinely missing migration-11 column falls back to the original columns. Anything else is a real error and is reported.
+    if (!isMissingProfileColumn(res.error)) throw classifyProfileError(res.error, "load");
+    migrated = false;
+    res = await db.from("profiles").select(BASE_COLUMNS).eq("id", uid).maybeSingle();
+    if (res.error) throw classifyProfileError(res.error, "load");
+  }
   const row = (res.data ?? null) as Record<string, unknown> | null;
   return { profile: profileFromRow(row, uid, defaultTz), exists: row !== null, migrated };
 }
 
-/** Only known columns are written (never id or created_at). Updates the existing row, or creates it for users who have none yet. */
-export async function saveProfile(db: Db, uid: string, patch: Record<string, unknown>, exists: boolean): Promise<void> {
+/** Only known columns are written (never id or created_at). Updates the existing row, or creates it for users who have none yet.
+ *  First save (no row): the id is always the signed-in user's, and the time zone and units the user sees on the form are stored with it, so
+ *  the row never depends on column defaults. If the row appeared meanwhile (another tab, a sign-up trigger) the save becomes an update. The
+ *  row-level security of the table is not worked around: a refused insert is reported, never retried another way. */
+export async function saveProfile(db: Db, uid: string, patch: Record<string, unknown>, exists: boolean, defaults?: { timezone: string; units: Units }): Promise<void> {
   const row: Record<string, unknown> = {};
   for (const k of WRITABLE) if (k in patch) row[k] = patch[k];
   if (Object.keys(row).length === 0) return;
-  if (exists) {
+  const update = async () => {
     const { data, error } = await db.from("profiles").update(row).eq("id", uid).select("id");
-    if (error) fail(error);
-    if (!data || data.length === 0) throw new Error("Profile not found.");
-  } else {
-    const { error } = await db.from("profiles").insert({ id: uid, ...row }).select("id").single();
-    if (error) fail(error);
+    if (error) throw classifyProfileError(error, "save");
+    if (!data || data.length === 0) throw new ProfileError("other", "Your profile was not found, so nothing was saved. Reload the page and try again.");
+  };
+  if (exists) return update();
+  const { error } = await db.from("profiles").insert({ ...(defaults ? { timezone: defaults.timezone, units: defaults.units } : {}), ...row, id: uid }).select("id").single();
+  if (!error) return;
+  if (error.code === "23505" || /duplicate key/i.test(error.message ?? "")) return update();       // the row exists after all: save into it
+  if (error.code === "42501" || /row-level security/i.test(error.message ?? "")) {
+    throw new ProfileError("permission", "Your profile could not be created: this account is not allowed to create it yet. Nothing was changed. Please contact the person who runs APEX.", false);
   }
+  throw classifyProfileError(error, "save");
 }
 
 export interface Measured { value: number; day: string; source: Source | "unknown"; label: string }

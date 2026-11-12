@@ -89,7 +89,7 @@ export async function POST(req: Request) {
     }
     if (e instanceof QuotaUnavailable) {
       console.error("summaries: rate limiter unavailable");          // fail closed: no AI call without a working limiter
-      return Response.json({ error: "AI summaries are temporarily unavailable (the usage limiter is not set up yet)." }, { status: 503 });
+      return Response.json({ error: "AI summaries are temporarily unavailable. Please try again later." }, { status: 503 });
     }
     if (e instanceof GeminiError) {
       console.error("summaries: model error", e.kind, JSON.stringify({ attempts: e.attempts.length, elapsedMs: Date.now() - startedAt }));   // per-attempt details were logged by the caller; never prompts or answers

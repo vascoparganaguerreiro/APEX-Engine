@@ -276,6 +276,18 @@ select{background:var(--card2);color:var(--text);border:1px solid var(--line);bo
 @media (max-width:420px){.td-metrics3{grid-template-columns:1fr}.td-metric{flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:4px 10px}.td-metric small{width:100%}}
 @media (max-width:760px){.cmp{grid-template-columns:1fr}.setgrid{grid-template-columns:40px 1fr 1fr 58px 50px}.main{padding-bottom:120px}}
 
+/* Login: "Remember me" */
+.remember{flex-direction:row;align-items:flex-start;gap:12px;min-height:44px;padding:6px 0;margin:0 0 14px;color:var(--text);font-size:15px;cursor:pointer}
+.remember input{width:22px;height:22px;flex:none;margin:1px 0 0;padding:0;accent-color:var(--green);cursor:pointer}
+.remember span{display:flex;flex-direction:column;gap:2px}.remember small{color:var(--muted);font-size:12.5px;line-height:1.4}
+
+/* Password field with a show/hide button (components/PasswordField.tsx) */
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}.field>label{margin-bottom:0}
+.pwfield{position:relative}.pwfield input{padding-right:52px}
+.pwtoggle{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;border-radius:10px;color:var(--muted);cursor:pointer;padding:0}
+.pwtoggle:hover,.pwtoggle:focus-visible,.pwtoggle[aria-pressed="true"]{color:var(--green)}
+.pwtoggle:focus-visible{outline:2px solid var(--green);outline-offset:-2px}
+
 /* ---- Phone use (Task 9A). Additive: desktop (> 800px) is untouched. ---- */
 @media (max-width:800px){
   /* a grid track of "1fr" can grow to its widest child (a table, a long word) and push the whole page wider than the screen */

@@ -21,7 +21,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ provider: stri
     const state = randomState(cfg.stateLength), nonce = randomNonce();
     const { error } = await db.from("oauth_states").insert({ state_hash: sha256(state), user_id: uid, provider, nonce_hash: sha256(nonce), expires_at: new Date(now + STATE_TTL_MS).toISOString() });
     if (error) {
-      if (missingTable(error)) return Response.json({ error: "Connections need a database update (migration 14) that has not been applied yet." }, { status: 503 });
+      if (missingTable(error)) return Response.json({ error: "Connections aren't available right now. Please try again later." }, { status: 503 });
       return Response.json({ error: "Could not start the connection." }, { status: 500 });
     }
     const secure = new URL(cfg.redirectUri).protocol === "https:";

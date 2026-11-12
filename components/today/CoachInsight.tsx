@@ -9,7 +9,8 @@ import { insightView, relDay, shortDate } from "@/lib/today/model";
 import type { AssessmentRow } from "@/lib/coach/client";
 import type { Section } from "@/lib/today/load";
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+import { friendlyMessage } from "@/lib/userError";
+const errMsg = (e: unknown) => friendlyMessage(e, "The Coach could not answer", { scope: "today.coach" });
 
 export default function CoachInsight({ s, today, tz, onSaved }: { s: Section<AssessmentRow | null>; today: string; tz: string; onSaved: () => void }) {
   const [consent, , ready, consentUser] = useConsent();

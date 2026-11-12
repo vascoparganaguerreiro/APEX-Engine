@@ -277,8 +277,8 @@ None of 09–12 needs 06, 07 or 08, or each other, in SQL.
 ### 3.2 Application feature dependencies (the app degrades without them)
 | Feature | Needs | Behaviour when missing |
 |---|---|---|
-| Today | base tables; 06 (data sources); 08, 12, 14 per section | Each section shows its own "needs a database update (migration NN)" message. Races load through the original-columns fallback. |
-| Races page (list, create, edit) | **10** | Listing and saving fail (it reads the Race Hub columns). Today, the Coach and summaries still find the next race through the fallback. |
+| Today | base tables; 06 (data sources); 08, 12, 14 per section | Each section shows its own plain "isn't set up on your account yet" message (no migration numbers are shown to people). Races load through the original-columns fallback. |
+| Races page (list, create, edit) | **10** for location, distance, target time, status and swimming/football | Without 10 the page still lists, creates, edits and deletes races with the original fields (name, date, sport as far as the format shows it, format, priority, goal, notes). A banner says the extra details are not set up, and the form does not offer them, so nothing typed is lost. A save that would lose a detail is refused. Today, the Coach and summaries find the next race through the same fallback. |
 | Profile | 11 for extended fields | Base fields work; extended fields are marked as pending a database update. |
 | Supplements | 08 | Unavailable. |
 | Biomarkers | 08 (manual entry), **09** (reading a report) | Report reading returns 503 ("enter the results manually"); manual entry works. |
@@ -439,8 +439,31 @@ where conrelid = to_regclass('public.races')
 -- P10-5: current policies (to compare afterwards; expect only the owner policy, e.g. own_rows)
 select policyname, cmd, roles from pg_policies where schemaname='public' and tablename='races' order by 1;
 ```
+-- P10-6: everything else attached to races (informational, but read it): constraints, triggers, dependent views
+select 'constraint' as kind, conname as name, pg_get_constraintdef(oid) as definition from pg_constraint where conrelid = to_regclass('public.races')
+union all
+select 'trigger', tgname, pg_get_triggerdef(oid) from pg_trigger where tgrelid = to_regclass('public.races') and not tgisinternal
+union all
+select 'dependent view', c.relname, null from pg_depend d join pg_rewrite r on r.oid = d.objid join pg_class c on c.oid = r.ev_class
+where d.refobjid = to_regclass('public.races') and c.oid <> d.refobjid and c.relkind in ('v','m')
+order by 1, 2;
+
+-- P10-7: who may write races, and at what level (the new columns are only writable if the table-level grant exists)
+select grantee, privilege_type from information_schema.table_privileges
+where table_schema='public' and table_name='races' and grantee in ('anon','authenticated') order by 1, 2;
+select grantee, column_name, privilege_type from information_schema.column_privileges
+where table_schema='public' and table_name='races' and grantee in ('anon','authenticated') and column_name in ('race_type','notes') order by 1, 2, 3;
+
+-- P10-8: every race has an owner (the row-level policy is what separates accounts)
+select count(*) as rows_without_owner from public.races where user_id is null;     -- expect 0
+```
 **Stop if:**
 - `races_table` is null, or `has_race_type` is false;
+- P10-6 shows a CHECK on `race_type` or `priority` that rejects a value the app writes (`race_type`: `10k`, `half_marathon`, `marathon`, `trail`,
+  `cycling`, `triathlon_sprint`, `triathlon_olympic`, `half_ironman`, `ironman`, `other`; `priority`: `A`, `B`, `C`), a trigger that reads or writes the
+  columns being added, or a view you do not recognise (a view built on `races` does not see new columns, which is safe, but find out what it is);
+- P10-7 shows `authenticated` with column-level privileges only (no table-level INSERT and UPDATE), or any privilege for `anon`;
+- P10-8 is above 0;
 - any P10-2 row has an `actual_udt` that differs from `expected_udt`;
 - `status` already exists and `is_nullable = 'YES'`;
 - any P10-3 counter is above 0, or P10-3 itself fails with a cast error (a non-numeric value in an existing `distance` or
@@ -572,6 +595,15 @@ select sport, count(*) from public.races group by 1 order by 1;      -- matches 
 -- Q10-4: RLS and policies unchanged
 select relrowsecurity from pg_class where oid='public.races'::regclass;                              -- true
 select policyname, cmd, roles from pg_policies where schemaname='public' and tablename='races' order by 1;   -- identical to P10-5
+-- Q10-5: grants and ownership unchanged
+select grantee, privilege_type from information_schema.table_privileges
+where table_schema='public' and table_name='races' and grantee in ('anon','authenticated') order by 1, 2;      -- identical to P10-7
+select count(*) as rows_without_owner from public.races where user_id is null;                                  -- 0
+```
+**If the Races page still says it is not set up after Q10-1 to Q10-5 pass**, the API's schema cache has not noticed the new columns. Run this
+once (it changes no data; it only asks the API to re-read the table definitions), wait a few seconds, then reload the page:
+```sql
+notify pgrst, 'reload schema';
 ```
 
 ### 6.3 After 11

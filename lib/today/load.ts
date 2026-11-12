@@ -2,20 +2,25 @@
 // Browser loaders for the Today cockpit. Every read runs as the signed-in user (RLS) and every module is independent: a missing
 // migration or a failed query affects only its own card ("unavailable"), never the whole page. Nothing here writes data.
 import { getSupabase } from "../supabase";
+import { friendlyMessage, logTechnical, NOT_SET_UP_MESSAGE } from "../userError";
 import { addDays } from "../engine";
 import { listRacesCompat, type Race } from "../races";
 import { loadHistory, loadLinksOrNone, NotSetUp, type Db as StrengthDb } from "../strength/data";
 import { loadExcludedActivityIds } from "../strength/dedup";
-import { workSets } from "../strength/analytics";
+import { workingExercises, workingSetCount } from "../strength/analytics";
 import { resolveExercise } from "../strength/library";
 import type { Intake, Schedule, Supplement } from "../health/core";
 import type { AssessmentRow } from "../coach/client";
 import type { ActLite, DailyRow, PanelLite, ResultLite, StrengthLite } from "./model";
 
 export type Section<T> = { status: "ok"; data: T } | { status: "unavailable"; reason: string };
-const msg = (e: unknown) => (e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e));
-const missing = (e: unknown) => /does not exist|schema cache|could not find|PGRST20[25]|42P01/i.test(msg(e) + String((e as { code?: string } | null)?.code ?? ""));
-const unavailable = (e: unknown, setup: string): Section<never> => ({ status: "unavailable", reason: missing(e) ? setup : "Could not load right now." });
+/** "This module's table is not there": decided ONLY from the Postgres / PostgREST code for a missing table or function, never from message text. */
+const missing = (e: unknown) => ["42P01", "PGRST202", "PGRST205"].includes(String((e as { code?: string } | null)?.code ?? ""));
+/** The reason a card shows. `setup` is the friendly "not set up" text, used only for a confirmed missing table; the technical detail goes to the log. */
+const unavailable = (e: unknown, setup: string): Section<never> => {
+  logTechnical("today.load", e);
+  return { status: "unavailable", reason: missing(e) ? setup : friendlyMessage(e, "Could not load right now") };
+};
 
 /** sleep_goal_h is null unless the profile actually holds a positive value: no default goal is invented. */
 export interface ProfileLite { display_name: string | null; timezone: string | null; sleep_goal_h: number | null }
@@ -50,9 +55,10 @@ export async function loadActivities(today: string): Promise<Section<ActLite[]>>
 export async function loadStrength(today: string): Promise<Section<StrengthLite[]>> {
   try {
     const hs = await loadHistory(getSupabase() as unknown as StrengthDb, { keys: null, sinceIso: `${addDays(today, -40)}T00:00:00Z`, max: 400, resolve: (k) => resolveExercise(k, []) });
-    return { status: "ok", data: hs.map((s) => ({ id: s.id, title: s.title, startedAt: s.startedAt, endedAt: s.endedAt, pausedSeconds: s.pausedSeconds, sets: s.exercises.reduce((n, e) => n + workSets(e).length, 0), exercises: s.exercises.length })) };
+    return { status: "ok", data: hs.map((s) => ({ id: s.id, title: s.title, startedAt: s.startedAt, endedAt: s.endedAt, pausedSeconds: s.pausedSeconds, sets: workingSetCount(s), exercises: workingExercises(s).length })) };
   } catch (e) {
-    return { status: "unavailable", reason: e instanceof NotSetUp || missing(e) ? "The Strength Hub needs a database update (migration 13)." : "Could not load right now." };
+    if (e instanceof NotSetUp) return { status: "unavailable", reason: NOT_SET_UP_MESSAGE };
+    return unavailable(e, NOT_SET_UP_MESSAGE);
   }
 }
 
@@ -69,7 +75,7 @@ export async function loadActiveWorkout(): Promise<{ title: string; startedAt: s
 export async function loadBiomarkers(): Promise<Section<{ panel: PanelLite | null; results: ResultLite[] }>> {
   const sb = getSupabase();
   const p = await sb.from("blood_panels").select("id,collected_on,lab_name").order("collected_on", { ascending: false }).limit(1);
-  if (p.error) return unavailable(p.error, "Biomarkers need a database update (migration 08).");
+  if (p.error) return unavailable(p.error, NOT_SET_UP_MESSAGE);
   const panel = (p.data?.[0] as PanelLite | undefined) ?? null;
   if (!panel) return { status: "ok", data: { panel: null, results: [] } };
   const r = await sb.from("biomarker_results").select("value,ref_low,ref_high").eq("panel_id", panel.id).limit(500);
@@ -84,20 +90,20 @@ export async function loadSupplements(today: string): Promise<Section<{ sups: Su
     sb.from("supplement_intakes").select("supplement_id,slot,day,status").gte("day", addDays(today, -1)).lte("day", addDays(today, 1)),
   ]);
   const err = s.error ?? c.error ?? i.error;
-  if (err) return unavailable(err, "Supplements need a database update (migration 08).");
+  if (err) return unavailable(err, NOT_SET_UP_MESSAGE);
   return { status: "ok", data: { sups: (s.data ?? []) as Supplement[], schedules: (c.data ?? []) as Schedule[], intakes: (i.data ?? []) as Intake[] } };
 }
 
 /** Races for Today. Works before migration 10 (falls back to the original columns), so existing races always show. */
 export async function loadRaces(): Promise<Section<Race[]>> {
   try { return { status: "ok", data: (await listRacesCompat(getSupabase())).races }; }
-  catch { return { status: "unavailable", reason: "Races could not be loaded right now." }; }
+  catch (e) { return { status: "unavailable", reason: friendlyMessage(e, "Races could not be loaded", { scope: "today.races" }) }; }
 }
 
 /** The most recent saved Daily Coach analysis (12). Reading it costs nothing; a new one is only made when the user asks. */
 export async function loadLatestDaily(): Promise<Section<AssessmentRow | null>> {
   const { data, error } = await getSupabase().from("coach_assessments").select("id,kind,mode,sport,score,confidence,result,created_at").eq("kind", "daily").order("created_at", { ascending: false }).limit(1);
-  if (error) return unavailable(error, "The Coach needs a database update (migration 12).");
+  if (error) return unavailable(error, NOT_SET_UP_MESSAGE);
   return { status: "ok", data: (data?.[0] as AssessmentRow | undefined) ?? null };
 }
 
