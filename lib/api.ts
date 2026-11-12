@@ -57,8 +57,24 @@ export async function extractReport(file: File): Promise<ReportExtractResult> {
   if (!token) throw new Error("Please sign in again.");
   const form = new FormData();
   form.append("file", file);
-  const r = await fetch("/api/biomarkers/extract", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+  const r = await fetch("/api/biomarkers/extract", { method: "POST", headers: { Authorization: `Bearer ${token}`, "X-Report-Consent": "yes" }, body: form });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error ?? `Request failed (${r.status})`);
   return j as ReportExtractResult;
+}
+
+export type CoachApiResult = import("./coach/engine").CoachResult;
+/** Ask the Coach. Sends the data categories the user switched on; the server enforces consent, limits and the context actually used. */
+export async function coachRequest(body: Record<string, unknown>, categories: string[]): Promise<CoachApiResult> {
+  const { data } = await getSupabase().auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Please sign in again.");
+  const r = await fetch("/api/coach", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(categories.length ? { "X-Coach-Consent": "yes" } : {}) },
+    body: JSON.stringify({ ...body, categories, today: new Date().toLocaleDateString("sv-SE") }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error ?? `Request failed (${r.status})`);
+  return j as CoachApiResult;
 }

@@ -94,6 +94,25 @@ export function mapActivity(a: Record<string, unknown>): ActivityRow | null {
   };
 }
 
+/** Where the activity originally came from and what the watch measured, as reported by Intervals.icu. Stored in the provenance columns
+ *  added by 13_strength.sql. Only fields that are present and plausible are kept; nothing is derived or estimated. */
+export interface ActivityExtras { origin: string | null; origin_device: string | null; elapsed_s: number | null; max_hr: number | null; calories: number | null }
+export function mapActivityExtras(a: Record<string, unknown>): ActivityExtras {
+  const text = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+  const int = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? Math.round(v) : null);
+  return {
+    origin: text(a.source, 40), origin_device: text(a.device_name, 80), elapsed_s: int(a.elapsed_time, 1, 2_592_000),
+    max_hr: int(a.max_heartrate, 30, 250), calories: int(a.calories, 0, 30_000),
+  };
+}
+
+/** Same as fetchActivities, plus the provenance extras for each activity. */
+export async function fetchActivitiesDetailed(athleteId: string, apiKey: string, oldest: string, newest: string, fetchImpl: typeof fetch = fetch): Promise<Array<ActivityRow & ActivityExtras>> {
+  const id = normalizeAthleteId(athleteId);
+  const list = await getList(`/athlete/${id}/activities?oldest=${oldest}&newest=${newest}`, apiKey, fetchImpl);
+  return list.map((raw) => { const row = mapActivity(raw); return row ? { ...row, ...mapActivityExtras(raw) } : null; }).filter((x): x is ActivityRow & ActivityExtras => x !== null);
+}
+
 async function getList(path: string, apiKey: string, fetchImpl: typeof fetch): Promise<Record<string, unknown>[]> {
   let r: Response;
   try {

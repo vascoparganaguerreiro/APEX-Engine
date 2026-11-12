@@ -8,6 +8,10 @@ import { buildManualPatch, type MetricRow } from "@/lib/provenance";
 import { todayIso } from "@/lib/dates";
 import type { DailyRow } from "@/lib/types";
 import TodayView from "@/components/TodayView";
+import { NextRaceCard } from "@/components/races/RaceBits";
+import { daysUntil, nextUpcomingRace, type Race } from "@/lib/races";
+import { loadLinksOrNone, type Db as StrengthDb } from "@/lib/strength/data";
+import { loadExcludedActivityIds } from "@/lib/strength/dedup";
 
 const errMsg = (e: unknown) =>
   e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e);
@@ -17,8 +21,10 @@ const num = (v: unknown): number | null => (v === null || v === undefined ? null
 export default function TodayPage() {
   const { session } = useAuth();
   const [rows, setRows] = useState<DailyRow[] | null>(null);
+  const [upcomingRace, setUpcomingRace] = useState<Race | null>(null);
   const [loads, setLoads] = useState<Record<string, number>>({});
   const [goal, setGoal] = useState(8);
+  const [name, setName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [day, setDay] = useState(todayIso());
@@ -49,16 +55,20 @@ export default function TodayPage() {
       const sb = getSupabase();
       const since = addDays(todayIso(), -45);
       const loadSince = addDays(todayIso(), -210);   // CTL needs months of history to be meaningful
-      const [prof, daily, acts] = await Promise.all([
-        sb.from("profiles").select("sleep_goal_h").maybeSingle(),
+      const [prof, daily, acts, links] = await Promise.all([
+        sb.from("profiles").select("sleep_goal_h,display_name").maybeSingle(),
         sb.from("daily_metrics").select("day,hrv_ms,rhr_bpm,sleep_minutes,sleep_score").gte("day", since).order("day"),
-        sb.from("activities").select("started_at,load").gte("started_at", `${loadSince}T00:00:00Z`).limit(5000),
+        sb.from("activities").select("id,started_at,load").gte("started_at", `${loadSince}T00:00:00Z`).limit(5000),
+        loadLinksOrNone(sb as unknown as StrengthDb),          // merged duplicates (Strength Hub); empty before migration 13
       ]);
       if (daily.error) throw daily.error;
       if (acts.error) throw acts.error;
       setRows((daily.data ?? []) as DailyRow[]);
-      setLoads(dailyLoads((acts.data ?? []) as Array<{ started_at: string; load: number | null }>));
+      // A copy of the same session (e.g. Strava duplicate of a Garmin recording) that the user merged is counted once.
+      const dup = loadExcludedActivityIds(links);
+      setLoads(dailyLoads(((acts.data ?? []) as Array<{ id: number; started_at: string; load: number | null }>).filter((a) => !dup.has(Number(a.id)))));
       if (prof.data?.sleep_goal_h) setGoal(Number(prof.data.sleep_goal_h));
+      setName(prof.data?.display_name?.trim() || null);
       setError(null);
     } catch (e) {
       setError(errMsg(e));
@@ -66,6 +76,11 @@ export default function TodayPage() {
   }, []);
 
   useEffect(() => { if (session) load(); }, [session, load]);
+  // The next race is a bonus: if it cannot be loaded (for example the Race Hub migration is not applied) Today still works.
+  useEffect(() => {
+    if (!session) return;
+    nextUpcomingRace(getSupabase(), todayIso()).then(setUpcomingRace).catch(() => setUpcomingRace(null));
+  }, [session]);
 
   const latest = rows && rows.length ? rows[rows.length - 1] : null;
   const prior = rows && latest ? rows.filter((r) => r.day !== latest.day).slice(-14) : [];
@@ -109,7 +124,9 @@ export default function TodayPage() {
     <>
       <div className="eyebrow">Command Center</div>
       <h1>Today</h1>
+      {name && <p className="muted small" style={{ marginTop: -8 }}>Hi, {name}.</p>}
       {error && <div className="notice error">{error}</div>}
+      {upcomingRace && daysUntil(upcomingRace.race_date, today) <= 365 && <NextRaceCard race={upcomingRace} today={today} />}
       {rows === null && !error ? <p className="muted">Loading…</p> : <TodayView result={result} latest={latest} goal={goal} today={today} trend={trend} />}
 
       <h2>Log a day</h2>

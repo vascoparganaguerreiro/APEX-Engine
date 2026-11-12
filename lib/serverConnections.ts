@@ -4,7 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 import { decryptSecret, encryptSecret, needsRotation } from "@/lib/crypto";
 import * as store from "@/lib/connectionStore";
 
-function admin() {
+/** The one server-side privileged client (service role). Import only from route handlers. */
+export function adminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new store.ConnectionError(500, "The server is missing SUPABASE_SERVICE_ROLE_KEY.");
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -16,7 +17,7 @@ const ops: store.CryptoOps = {
   needsRotation: (blob) => needsRotation(blob),
 };
 
-export const saveConnection = (uid: string, athleteId: string, apiKey: string) => store.saveConnection(admin(), ops, uid, athleteId, apiKey);
-export const getConnection = (uid: string) => store.getConnection(admin(), ops, uid);
-export const deleteConnection = (uid: string) => store.deleteConnection(admin(), uid);
-export const markSynced = (uid: string) => store.markSynced(admin(), uid);
+export const saveConnection = (uid: string, athleteId: string, apiKey: string) => store.saveConnection(adminClient(), ops, uid, athleteId, apiKey);
+export const getConnection = (uid: string) => store.getConnection(adminClient(), ops, uid);
+export const deleteConnection = (uid: string) => store.deleteConnection(adminClient(), uid);
+export const markSynced = (uid: string) => store.markSynced(adminClient(), uid);

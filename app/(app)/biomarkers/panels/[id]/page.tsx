@@ -75,7 +75,7 @@ export default function PanelPage() {
     catch { setFile(null); setError("This browser could not prepare the file (a secure https connection is required)."); }
   }
   async function read() {
-    if (!file) return;
+    if (!file || !consent) return;          // the consent checkbox is mandatory (the button is also disabled without it)
     setReading(true); setError(null); setDup(null);
     try {
       const r = await extractReport(file.f);

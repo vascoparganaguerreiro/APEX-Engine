@@ -1,4 +1,4 @@
-import { IntervalsError, fetchActivities, fetchWellness } from "@/lib/intervals";
+import { IntervalsError, fetchActivitiesDetailed, fetchWellness } from "@/lib/intervals";
 import { authUser, errorResponse } from "@/lib/serverAuth";
 import { getConnection, markSynced } from "@/lib/serverConnections";
 
@@ -22,7 +22,7 @@ export async function POST(req: Request): Promise<Response> {
     const oldest = isoDay(new Date(Date.now() - days * 86400000));
     const [wellness, acts] = await Promise.all([
       fetchWellness(conn.athleteId, conn.apiKey, oldest, newest),
-      fetchActivities(conn.athleteId, conn.apiKey, oldest, newest),
+      fetchActivitiesDetailed(conn.athleteId, conn.apiKey, oldest, newest),
     ]);
 
     // One atomic statement in Postgres (06_metric_provenance.sql): manual and legacy_unknown values are never
@@ -35,8 +35,14 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     if (acts.length) {
-      const { error } = await sb.from("activities").upsert(
+      // Provenance columns (origin, device, max HR, calories, elapsed time) exist once 13_strength.sql is applied. Until then the
+      // activities are saved exactly as before, without them.
+      let { error } = await sb.from("activities").upsert(
         acts.map((a) => ({ ...a, user_id: uid, source: "intervals" })), { onConflict: "user_id,source,external_id" });
+      if (error && /column|schema cache/i.test(error.message ?? "")) {
+        ({ error } = await sb.from("activities").upsert(
+          acts.map(({ origin: _o, origin_device: _d, elapsed_s: _e, max_hr: _m, calories: _c, ...a }) => ({ ...a, user_id: uid, source: "intervals" })), { onConflict: "user_id,source,external_id" }));
+      }
       if (error) throw new IntervalsError(500, "Could not save activities.");
     }
 

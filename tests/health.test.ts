@@ -180,7 +180,7 @@ test("lab reports bucket is private and folder-scoped to the owner", () => {
 test("report extraction is authenticated first, server-side, and never exposes the AI key", () => {
   const route = read("app/api/biomarkers/extract/route.ts");
   assert.ok(route.indexOf("authUser(req)") > 0 && route.indexOf("authUser(req)") < route.indexOf("req.formData"));
-  assert.ok(!/console\./.test(route), "report contents are never logged");
+  assert.deepEqual(route.match(/console\.[a-z]+\([^)]*\)/g) ?? [], ['console.error("report extraction: rate limiter unavailable")'], "only a fixed message is ever logged: never report contents");
   const walk = (dir: string): string[] => (readdirSync(join(root, dir), { recursive: true }) as string[]).map((f) => `${dir}/${f.replace(/\\/g, "/")}`).filter((f) => /\.tsx?$/.test(f));
   for (const f of [...walk("app"), ...walk("components")].filter((f) => !f.includes("/api/"))) {
     assert.ok(!/GEMINI_API_KEY/.test(read(f)), `${f}: AI key must stay on the server`);

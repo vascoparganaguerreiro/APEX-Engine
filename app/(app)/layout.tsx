@@ -8,14 +8,15 @@ import { useAuth } from "@/lib/useAuth";
 const NAV = [
   { href: "/today", label: "Today" },
   { href: "/activities", label: "Activities" },
+  { href: "/strength", label: "Strength" },
   { href: "/import", label: "Import" },
   { href: "/training", label: "Training", soon: true },
-  { href: "/coach", label: "Coach", soon: true },
+  { href: "/coach", label: "Coach" },
   { href: "/supplements", label: "Supplements" },
   { href: "/biomarkers", label: "Biomarkers" },
   { href: "/timeline", label: "Timeline" },
-  { href: "/races", label: "Races", soon: true },
-  { href: "/profile", label: "Profile", soon: true },
+  { href: "/races", label: "Races" },
+  { href: "/profile", label: "Profile" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
