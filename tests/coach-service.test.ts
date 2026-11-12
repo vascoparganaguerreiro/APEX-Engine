@@ -384,5 +384,5 @@ test("the route authenticates first, never trusts a client user id, and keeps co
   assert.ok(!/e\.message|prompt|req\.|body/.test(logs[1]));
   assert.match(route, /x-coach-consent/);
   for (const f of ["components/coach/ChatPanel.tsx", "components/coach/SessionEvaluator.tsx", "components/coach/consent.tsx", "app/(app)/coach/page.tsx"]) assert.ok(!/GEMINI_API_KEY|SERVICE_ROLE|api_key/i.test(read(f)), `${f} holds no secrets`);
-  assert.match(read("app/(app)/layout.tsx"), /\{ href: "\/coach", label: "Coach" \}/);
+  assert.match(read("lib/nav.ts"), /\{ href: "\/coach", label: "Coach" \}/);
 });

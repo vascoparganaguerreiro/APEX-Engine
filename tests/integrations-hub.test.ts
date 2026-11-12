@@ -28,7 +28,7 @@ test("/import no longer duplicates anything: it only forwards to the Connectivit
   assert.match(imp, /redirect\("\/integrations"\)/);
   assert.ok(!/IntervalsCard|connectIntervals|syncIntervals|type="password"|Athlete/.test(imp));
   assert.ok(!/^"use client"/.test(imp), "a server-side redirect, so no flash of an empty page");
-  const nav = read("app/(app)/layout.tsx");
+  const nav = read("lib/nav.ts");
   assert.ok(!/href: "\/import"/.test(nav) && /href: "\/integrations", label: "Connections"/.test(nav));
   const links = [...walk("app"), ...walk("components")].filter((f) => /\.tsx$/.test(f) && f !== "app/(app)/import/page.tsx" && /href="\/import"/.test(read(f)));
   assert.deepEqual(links, [], "nothing links to the old page any more");

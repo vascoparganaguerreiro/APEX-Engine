@@ -225,7 +225,7 @@ test("migration 10 is additive, keeps existing data and does not touch RLS or gr
 });
 
 test("navigation, Today integration and in-place editing", () => {
-  const layout = read("app/(app)/layout.tsx");
+  const layout = read("lib/nav.ts");
   assert.match(layout, /\{ href: "\/races", label: "Races" \}/);
   assert.ok(!/href: "\/races", label: "Races", soon/.test(layout));
   // Today (redesigned): races load on their own and a failure only affects the race card.
