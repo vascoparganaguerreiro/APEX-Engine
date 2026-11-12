@@ -7,6 +7,8 @@ import { friendlyMessage } from "@/lib/userError";
 import {
   SLOT_LABEL, WEEKDAYS, addDay, adherence, dueOn, isIsoDate, type Intake, type Schedule, type Supplement,
 } from "@/lib/health/core";
+import EmptyState from "@/components/ui/EmptyState";
+import { EMPTY } from "@/lib/emptyStates";
 import SupplementForm, { slotRows, slotsFrom, type SlotDrafts } from "@/components/health/SupplementForm";
 
 const errMsg = (e: unknown) => friendlyMessage(e, "That could not be completed", { scope: "supplements" });
@@ -152,7 +154,8 @@ export default function SupplementsPage() {
       {error && <div className="notice error">{error}</div>}
       {sups === null && !error && <p className="muted">Loading…</p>}
 
-      {sups !== null && !editing && <button className="btn" onClick={() => setEditing("new")}>+ Add supplement</button>}
+      {sups !== null && sups.length === 0 && !editing && <EmptyState copy={EMPTY.supplements} headingLevel={2} onAction={() => setEditing("new")} />}
+      {sups !== null && sups.length > 0 && !editing && <button className="btn" onClick={() => setEditing("new")}>+ Add supplement</button>}
       {editing === "new" && <SupplementForm key="new" today={today} onSave={(b, sl) => save(b, sl, null)} onCancel={() => setEditing(null)} />}
       {stopping && (
         <form className="card formgrid" onSubmit={discontinue} style={{ marginTop: 14 }}>
@@ -164,7 +167,7 @@ export default function SupplementsPage() {
         </form>
       )}
 
-      {sups !== null && (
+      {sups !== null && sups.length > 0 && (
         <>
           <h2>Today&apos;s doses</h2>
           <div className="row" style={{ marginBottom: 10 }}>

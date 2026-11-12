@@ -9,6 +9,8 @@ import {
   SPORT_LABEL, addDaysIso, filterActivities, formatDistance, formatDuration, localDay, summarizeActivities,
   weekStart, weekTotals, type Activity,
 } from "@/lib/activities";
+import EmptyState from "@/components/ui/EmptyState";
+import { EMPTY } from "@/lib/emptyStates";
 import ActivityCard from "@/components/ActivityCard";
 import WeekCard from "@/components/WeekCard";
 import { loadLinksOrNone, type Db as StrengthDb } from "@/lib/strength/data";
@@ -105,7 +107,8 @@ export default function ActivitiesPage() {
       {error && <div className="notice error">{error}</div>}
       {info && <div className="notice">{info}</div>}
       {acts === null && !error && <p className="muted">Loading…</p>}
-      {acts !== null && (
+      {acts !== null && acts.length === 0 && !error && <EmptyState copy={EMPTY.activities} headingLevel={2} />}
+      {acts !== null && acts.length > 0 && (
         <>
           <WeekCard start={ws} end={we} totals={totals} summary={weekSummary} busy={busy === "week"}
             canNext={ws < thisWeek} onPrev={() => setWs(addDaysIso(ws, -7))} onNext={() => setWs(addDaysIso(ws, 7))}

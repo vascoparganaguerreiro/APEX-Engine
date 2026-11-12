@@ -8,6 +8,8 @@ import {
   SPORTS, SPORT_LABEL, countdown, createRace, deleteRace, filterRaces, formatDate, goalRace, listRacesCompat, monthGroups, nextRace, splitRaces, updateRace,
   type Race, type RaceInput, type Sport,
 } from "@/lib/races";
+import EmptyState from "@/components/ui/EmptyState";
+import { EMPTY } from "@/lib/emptyStates";
 import RaceForm from "@/components/races/RaceForm";
 import { PriorityPill, RaceSummary, raceMeta } from "@/components/races/RaceBits";
 import { friendlyError, friendlyMessage } from "@/lib/userError";
@@ -102,11 +104,9 @@ export default function RacesPage() {
         <>
           {editing === "new"
             ? <RaceForm key="new" today={today} defaultUnit={defaultUnit} legacy={legacy} onSave={(i) => save(i, null)} onCancel={() => setEditing(null)} />
-            : <button className="btn" onClick={() => setEditing("new")}>+ Add race</button>}
+            : all.length > 0 && <button className="btn" onClick={() => setEditing("new")}>+ Add race</button>}
 
-          {all.length === 0 && !editing && (
-            <div className="notice" style={{ marginTop: 14 }}>No races yet. Add your first race to start a countdown and see it on your Today page.</div>
-          )}
+          {all.length === 0 && !editing && <EmptyState copy={EMPTY.races} headingLevel={2} onAction={() => setEditing("new")} />}
 
           {all.length > 0 && (
             <div className="racehero">

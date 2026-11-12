@@ -17,6 +17,8 @@ import {
 import { Legend, MonthGrid, WeekGrid } from "@/components/calendar/CalendarGrid";
 import DayDrawer, { type DrawerActions } from "@/components/calendar/DayDrawer";
 import PlannedForm from "@/components/calendar/PlannedForm";
+import EmptyState from "@/components/ui/EmptyState";
+import { EMPTY } from "@/lib/emptyStates";
 
 const deviceZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return "UTC"; } };
 const errMsg = (e: unknown) => friendlyMessage(e, "That could not be completed", { scope: "calendar" });
@@ -127,6 +129,8 @@ export default function TrainingPage() {
       {planned?.status === "unavailable" && <div className="notice" role="status">{planned.reason} Races and recorded sessions are still shown; planning needs the calendar set-up.</div>}
       {(acts?.status === "unavailable" || strength?.status === "unavailable") && <div className="notice" role="status">Some recorded sessions could not be loaded right now.</div>}
       {ready && <p className="muted small" aria-label="Planned counts">This {view}: {counts.planned} planned, {counts.completed} completed, {counts.skipped} skipped sessions{counts.plannedMinutes ? ` · ${counts.plannedMinutes} planned minutes` : ""}. Counts only: planned sessions are never added to your training load.</p>}
+
+      {ready && !form && plannedList.length === 0 && <EmptyState compact copy={EMPTY.training} onAction={() => { setError(null); setForm({ date: open ?? today }); }} />}
 
       {form && ready && <PlannedForm key={form.plan?.id ?? `new-${form.date}`} initial={form.plan} date={form.date} onSave={save} onCancel={() => setForm(null)} />}
 

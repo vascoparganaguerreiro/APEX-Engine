@@ -1,6 +1,8 @@
 "use client";
 // The six Today module cards. Each shows only data that exists, with the day it belongs to, and a calm empty state otherwise.
 import Link from "next/link";
+import EmptyState from "@/components/ui/EmptyState";
+import { EMPTY } from "@/lib/emptyStates";
 import type { ReactNode } from "react";
 import { formatDistance, formatDuration } from "@/lib/activities";
 import { formatDuration as raceTime, formatDistance as raceDistance, PRIORITY_LABEL } from "@/lib/races";
@@ -47,7 +49,7 @@ export function WellnessCard({ s, w, today, goal, whoop, onLog }: { s: Section<u
   return (
     <Module title="Wellness" accent="green" href="/integrations" linkText="Data sources" status={<>{status}<button type="button" className="td-inline" onClick={onLog}>Log a day</button></>} className="td-span-4">
       {s.status === "unavailable" ? <Unavailable s={s} /> : !w || w.state === "missing" ? (
-        <Empty>No HRV, resting heart rate or sleep recorded yet. Log a day with Quick log, or connect a device in <Link href="/integrations">Connections</Link>.</Empty>
+        <EmptyState compact copy={EMPTY["today-wellness"]} onAction={onLog} />
       ) : (
         <>
           <div className="td-metrics3">
@@ -113,7 +115,7 @@ export function EnduranceCard({ s, e, today }: { s: Section<unknown>; e: Enduran
   return (
     <Module title="Endurance" accent="blue" href="/activities" linkText="All activities" className="td-span-3"
       status={e?.last ? <span className="td-pill">{relDay(e.last.day, today)}</span> : null}>
-      {s.status === "unavailable" ? <Unavailable s={s} /> : !e || !e.last ? <Empty>No endurance activities in the last 210 days. Sync Intervals.icu from <Link href="/integrations">Connections</Link>.</Empty> : (
+      {s.status === "unavailable" ? <Unavailable s={s} /> : !e || !e.last ? <EmptyState compact copy={EMPTY["today-endurance"]} /> : (
         <>
           <div className="td-headline">
             <b>{e.last.title || e.last.sport}</b>
@@ -144,7 +146,7 @@ export function StrengthCard({ s, st, today, active }: { s: Section<unknown>; st
     <Module title="Strength" accent="violet" href="/strength" linkText={active ? "Continue workout" : "Strength Hub"} className="td-span-3"
       status={active ? <span className="td-pill f-today">In progress</span> : st?.last ? <span className="td-pill">{relDay(st.last.day, today)}</span> : null}>
       {active && <div className="td-headline"><b>{active.title}</b><span className="td-meta">Started {new Date(active.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · saved on this device</span></div>}
-      {s.status === "unavailable" ? <Unavailable s={s} /> : !st || !st.last ? (!active && <Empty>No gym sessions in the last 40 days. Start one in the Strength Hub, or import your Hevy history.</Empty>) : (
+      {s.status === "unavailable" ? <Unavailable s={s} /> : !st || !st.last ? (!active && <EmptyState compact copy={EMPTY["today-strength"]} />) : (
         <>
           {!active && <div className="td-headline"><b>{st.last.title}</b><span className="td-meta">{shortDate(st.last.day)} · {st.last.exercises} exercise{st.last.exercises === 1 ? "" : "s"} · {st.last.sets} working set{st.last.sets === 1 ? "" : "s"}{st.last.durationS ? ` · ${formatDuration(st.last.durationS)}` : ""}</span></div>}
           <div className="td-stats">
@@ -162,7 +164,7 @@ export function BiomarkersCard({ s, b, today }: { s: Section<unknown>; b: Biomar
   return (
     <Module title="Biomarkers" accent="red" href={b ? `/biomarkers/panels/${b.panel.id}` : "/biomarkers"} linkText={b ? "Open latest panel" : "Biomarkers"} className="td-span-3"
       status={b ? <span className="td-pill">{b.daysAgo === 0 ? "today" : relDay(b.panel.collected_on, today)}</span> : null}>
-      {s.status === "unavailable" ? <Unavailable s={s} /> : !b ? <Empty>No blood tests saved yet. Add a report in Biomarkers and APEX will track each marker over time.</Empty> : (
+      {s.status === "unavailable" ? <Unavailable s={s} /> : !b ? <EmptyState compact copy={EMPTY["today-biomarkers"]} /> : (
         <>
           <div className="td-headline"><b>Blood test{b.panel.lab_name ? ` · ${b.panel.lab_name}` : ""}</b><span className="td-meta">Collected {shortDate(b.panel.collected_on)} ({b.daysAgo} days ago)</span></div>
           <div className="td-stats">
@@ -181,7 +183,7 @@ export function SupplementsCard({ s, sup, onLog }: { s: Section<unknown>; sup: S
   return (
     <Module title="Supplements" accent="amber" href="/supplements" linkText="Supplements" className="td-span-3"
       status={total ? <span className={`td-pill ${done === total ? "f-today" : ""}`}>{done}/{total} logged</span> : null}>
-      {s.status === "unavailable" ? <Unavailable s={s} /> : !sup || (sup.active === 0 && total === 0) ? <Empty>No active supplements. Add them with a schedule and log each dose here.</Empty> : (
+      {s.status === "unavailable" ? <Unavailable s={s} /> : !sup || (sup.active === 0 && total === 0) ? <EmptyState compact copy={EMPTY["today-supplements"]} /> : (
         <>
           <div className="td-progress" aria-label={`${done} of ${total} doses logged`}><i style={{ width: total ? `${(done / total) * 100}%` : 0 }} /></div>
           <div className="td-stats">
@@ -201,7 +203,7 @@ export function RaceCard({ s, race, today }: { s: Section<unknown>; race: Race |
   return (
     <Module title="Next race" accent="teal" href={r ? `/races/${r.race.id}` : "/races"} linkText={r ? "Race details" : "Races"} className="td-span-2"
       status={r ? <span className={`prio prio-${r.race.priority}`} title={PRIORITY_LABEL[r.race.priority]}>{r.race.priority}</span> : null}>
-      {s.status === "unavailable" ? <Unavailable s={s} /> : !r ? <Empty>No upcoming race. Add one to get a countdown and race-aware coaching.</Empty> : (
+      {s.status === "unavailable" ? <Unavailable s={s} /> : !r ? <EmptyState compact copy={EMPTY["today-race"]} /> : (
         <>
           <div className="td-count"><b>{r.cd.days}</b><small>{r.cd.days === 1 ? "day" : "days"}</small></div>
           <div className="td-headline"><b>{r.race.name}</b><span className="td-meta">{shortDate(r.race.race_date)}{r.race.location ? ` · ${r.race.location}` : ""}{r.race.distance ? ` · ${raceDistance(r.race.distance, r.race.distance_unit)}` : ""}</span></div>

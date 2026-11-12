@@ -14,6 +14,9 @@ import type { SyncEngine } from "@/lib/strength/sync";
 import WorkoutEditor from "@/components/strength/WorkoutEditor";
 import RestTimer, { loadRest, saveRest, type RestState } from "@/components/strength/RestTimer";
 import AskApex from "@/components/strength/AskApex";
+import EmptyState, { LoadProblem } from "@/components/ui/EmptyState";
+import { EMPTY } from "@/lib/emptyStates";
+import { loadView } from "@/lib/emptyStates";
 import { SetupNotice, StrengthNav, SyncPill } from "@/components/strength/Bits";
 
 const GYM_KEY = "apex-gym-equipment-v1";
@@ -148,6 +151,8 @@ export default function StrengthPage() {
     );
   }
 
+  // "No finished workouts" is only true when history loaded successfully; a failed load or a missing set-up is reported as such, never as empty.
+  const histView = loadView({ loaded: hist.sessions !== null, error: hist.error, notSetUp: hist.setUp === false, count: (hist.sessions ?? []).length });
   const recent = [...(hist.sessions ?? [])].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)).slice(0, 8);
   return (
     <>
@@ -171,7 +176,8 @@ export default function StrengthPage() {
       </details>
       {unsynced.length > 0 && <div className="notice">Finished on this device, waiting to upload: {unsynced.map((u) => <Link key={u.id} href={`/strength/history/${u.id}`} style={{ color: "var(--green)", marginRight: 8 }}>{u.title} ({u.startedAt.slice(0, 10)})</Link>)} <SyncPill /></div>}
       <h2>Recent workouts</h2>
-      {hist.sessions === null ? <p className="muted">Loading…</p> : recent.length === 0 ? <div className="notice">No finished workouts yet.</div> : (
+      {histView === "error" && <LoadProblem message={hist.error ?? ""} onRetry={() => void hist.reload()} />}
+      {histView === "loading" ? <p className="muted">Loading…</p> : histView === "empty" ? <EmptyState copy={EMPTY["strength-history"]} headingLevel={3} onAction={() => start()} /> : recent.length === 0 ? null : (
         <div className="card">
           {recent.map((s) => (
             <Link key={s.id} href={`/strength/history/${s.id}`} className="doserow" style={{ textDecoration: "none", color: "inherit" }}>

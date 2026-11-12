@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import EmptyState from "@/components/ui/EmptyState";
+import { EMPTY } from "@/lib/emptyStates";
 import { useAuth } from "@/lib/useAuth";
 import { errMsg, loadPanels, loadResults } from "@/lib/health/load";
 import { rangeStatus, seriesKey, seriesLabel, splitByUnit, change, type Panel, type ResultPoint } from "@/lib/health/core";
@@ -55,7 +57,7 @@ export default function BiomarkersPage() {
 
       {results === null && !error && <p className="muted">Loading…</p>}
       {results !== null && results.length === 0 && panels.length === 0 && (
-        <div className="notice">No blood tests yet. Add one manually or upload a laboratory report to get started.</div>
+        <EmptyState copy={EMPTY.biomarkers} headingLevel={2} />
       )}
 
       {results !== null && results.length > 0 && (

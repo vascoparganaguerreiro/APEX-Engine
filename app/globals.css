@@ -452,3 +452,20 @@ select{background:var(--card2);color:var(--text);border:1px solid var(--line);bo
 @media (prefers-reduced-motion:reduce){.omni-bg,.omni-palette,.omni-sheet{animation:none}.omni-fab,.omni-row,.omni-side,.coachctx-head svg{transition:none}}
 /* desktop: the Strength rest bar sits beside the sidebar (240px), not over its Sign out button */
 @media (min-width:801px){.restbar{left:240px}}
+
+/* educational empty states (components/ui/EmptyState.tsx) */
+.empty{display:flex;gap:16px;align-items:flex-start;margin:14px 0;padding:20px;border:1px dashed #2a3644;border-radius:18px;background:linear-gradient(180deg,var(--card),var(--card2))}
+.empty-ic{flex:none;width:48px;height:48px;border-radius:14px;display:grid;place-items:center;background:#101a27;color:#38d4d0}
+.empty-body{min-width:0;display:flex;flex-direction:column;gap:6px}
+.empty-title{margin:0;font-size:18px;letter-spacing:-.01em;line-height:1.3}
+.empty-why{margin:0;font-size:15px;line-height:1.55}
+.empty-need{margin:0;color:var(--muted);font-size:14px;line-height:1.55}.empty-need b{color:var(--text);font-weight:600}
+.empty-cta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-top:8px}
+.empty .btn{display:inline-flex;align-items:center;min-height:44px;text-decoration:none}
+.empty-link{font-size:14px;font-weight:600;color:var(--green);text-decoration:none}.empty-link:hover{text-decoration:underline}
+.empty .btn:focus-visible,.empty-link:focus-visible{outline:2px solid #38d4d0;outline-offset:2px;border-radius:10px}
+.empty.compact{display:block;margin:0;padding:0;border:0;background:none;border-radius:0}
+.empty.compact .empty-title{font-size:14px}.empty.compact .empty-title b{font-weight:600}
+.empty.compact .empty-why,.empty.compact .empty-need{font-size:13px}
+.empty.compact .empty-cta{margin-top:10px}.empty.compact .btn{min-height:40px}
+@media (max-width:520px){.empty{flex-direction:column;gap:12px;padding:16px}}

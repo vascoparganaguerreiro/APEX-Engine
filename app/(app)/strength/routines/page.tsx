@@ -10,6 +10,8 @@ import { newId } from "@/lib/strength/runtime";
 import { LOAD_MODE_LABEL, SET_TYPES, SET_TYPE_LABEL, type LoadMode, type SetType } from "@/lib/strength/types";
 import ExercisePicker from "@/components/strength/ExercisePicker";
 import { SetupNotice, StrengthNav } from "@/components/strength/Bits";
+import EmptyState, { LoadProblem } from "@/components/ui/EmptyState";
+import { EMPTY } from "@/lib/emptyStates";
 
 const numIn = (v: string, int = false): number | null => { const t = v.replace(",", ".").trim(); if (!t) return null; const n = Number(t); return Number.isFinite(n) ? (int ? Math.round(n) : n) : null; };
 
@@ -46,6 +48,7 @@ export default function RoutinesPage() {
       <h1>Routines</h1>
       <StrengthNav />
       {rts.setUp === false && <SetupNotice what="Saving routines" />}
+      {rts.error && <LoadProblem message={rts.error} onRetry={() => void rts.reload()} />}
       {msg && <div className={msg.ok ? "notice ok" : "notice error"}>{msg.text}</div>}
       {!edit ? (
         <>
@@ -53,7 +56,7 @@ export default function RoutinesPage() {
             <button className="btn" onClick={() => { setMsg(null); setEdit(emptyRoutine(newId())); }}>New routine</button>
             {Object.keys(TEMPLATES).map((k) => <button key={k} className="chip" onClick={() => { setMsg(null); setEdit(fromTemplate(k, newId())); }} title={TEMPLATES[k].description}>From {TEMPLATES[k].name}</button>)}
           </div>
-          {rts.routines === null ? <p className="muted">Loading…</p> : rts.routines.length === 0 ? <div className="notice">No routines yet. Start from a template or build your own.</div> : rts.routines.map((r) => (
+          {rts.routines === null ? <p className="muted">Loading…</p> : rts.routines.length === 0 ? (rts.error || rts.setUp === false ? null : <EmptyState copy={EMPTY.routines} headingLevel={2} onAction={() => { setMsg(null); setEdit(emptyRoutine(newId())); }} />) : rts.routines.map((r) => (
             <div key={r.id} className="card" style={{ marginBottom: 12 }}>
               <div className="act-head"><b style={{ fontSize: 17 }}>{r.name}</b><span className="muted small">{r.exercises.length} exercises · {r.exercises.reduce((n, e) => n + e.sets.length, 0)} sets</span></div>
               <p className="muted small" style={{ marginTop: 0 }}>{r.exercises.map((e) => lib.resolve(e.key)?.name ?? "(missing exercise)").join(" · ")}</p>
