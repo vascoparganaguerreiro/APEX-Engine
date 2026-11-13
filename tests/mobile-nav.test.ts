@@ -9,16 +9,17 @@ const css = read("app/globals.css");
 const bar = read("components/nav/BottomNav.tsx");
 const layout = read("app/(app)/layout.tsx");
 
-test("bottom bar destinations: Today, Training, Activities, Coach, then More", () => {
-  assert.deepEqual(PRIMARY_NAV.map((n) => n.label), ["Today", "Training", "Activities", "Coach"]);
-  assert.deepEqual(PRIMARY_NAV.map((n) => n.href), ["/today", "/training", "/activities", "/coach"]);
+test("bottom bar destinations (Design System 1.0): Today, Activities, Coach, then More", () => {
+  assert.deepEqual(PRIMARY_NAV.map((n) => n.label), ["Today", "Activities", "Coach"]);
+  assert.deepEqual(PRIMARY_NAV.map((n) => n.href), ["/today", "/activities", "/coach"]);
   assert.match(bar, /<span>More<\/span>|<span>More<\/span>/);
-  assert.equal(PRIMARY_NAV.length + 1, 5);
+  assert.equal(PRIMARY_NAV.length + 1, 4);
+  assert.match(css, /\.bnav\{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/, "four equal columns");
 });
 
 test("More contains every other destination (no route lost, none duplicated) and only existing routes", () => {
   const more = MORE_NAV.map((n) => n.href);
-  for (const h of ["/biomarkers", "/timeline", "/races", "/integrations", "/supplements", "/profile", "/strength"]) assert.ok(more.includes(h), `${h} is in More`);
+  for (const h of ["/training", "/biomarkers", "/timeline", "/races", "/integrations", "/supplements", "/profile", "/strength"]) assert.ok(more.includes(h), `${h} is in More`);
   assert.equal(new Set(more).size, more.length);
   const all = [...PRIMARY_NAV, ...MORE_NAV].map((n) => n.href).sort();
   assert.deepEqual(all, DESKTOP_NAV.map((n) => n.href).sort(), "primary + More covers exactly the desktop destinations");
@@ -34,8 +35,8 @@ test("desktop navigation is unchanged: same items, same order, same labels", () 
 });
 
 test("active route: exact and nested paths highlight their own tab", () => {
-  assert.equal(activeTab("/today"), "today"); assert.equal(activeTab("/training"), "training"); assert.equal(activeTab("/activities"), "activities"); assert.equal(activeTab("/coach"), "coach");
-  assert.equal(activeTab("/training/anything"), "training");
+  assert.equal(activeTab("/today"), "today"); assert.equal(activeTab("/training"), "more", "Training now lives in More"); assert.equal(activeTab("/activities"), "activities"); assert.equal(activeTab("/coach"), "coach");
+  assert.equal(activeTab("/training/anything"), "more");
   assert.equal(isActive("/races/12", "/races"), true); assert.equal(isActive("/todayx", "/today"), false, "a path that merely starts with the same letters is not active");
   assert.equal(activeTab("/todayx"), null); assert.equal(activeTab("/"), null); assert.equal(activeTab("/login"), null);
 });

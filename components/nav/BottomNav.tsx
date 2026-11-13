@@ -8,7 +8,6 @@ import { MORE_NAV, PRIMARY_NAV, activeTab, isActive, opensKeyboard, type BottomT
 // calls the same function the desktop sidebar calls. Icons are inline SVG (no dependency).
 const ICON: Record<BottomTab, React.ReactNode> = {
   today: <><circle cx="12" cy="12" r="8" /><path d="M12 7.5V12l3 2" /></>,
-  training: <><rect x="4" y="5.5" width="16" height="14" rx="3" /><path d="M8 3.5v4M16 3.5v4M4 10h16" /></>,
   activities: <path d="M3 12h4l2.5-6 4 12 2.5-6H21" />,
   coach: <><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v6a2.5 2.5 0 0 1-2.5 2.5H11l-4 3.5V15h-.5A2.5 2.5 0 0 1 5 12.5z" /></>,
   more: <><circle cx="6" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="18" cy="12" r="1.3" /></>,

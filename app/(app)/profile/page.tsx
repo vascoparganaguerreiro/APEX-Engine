@@ -1,4 +1,5 @@
 "use client";
+import { LegalLinks } from "@/components/legal/Legal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
@@ -217,6 +218,7 @@ export default function ProfilePage() {
           </Disclosure>
         )}
         <ChangePasswordCard email={session?.user.email} />
+        <LegalLinks />
       </section>
 
         <div className="row savebar">

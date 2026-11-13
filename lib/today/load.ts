@@ -30,6 +30,14 @@ export async function loadProfileLite(): Promise<ProfileLite> {
   return { display_name: data?.display_name?.trim() || null, timezone: data?.timezone ?? null, sleep_goal_h: Number.isFinite(goal) && goal > 0 && goal <= 24 ? goal : null };
 }
 
+/** The person's primary goal (used only to choose how Today is arranged). Its own query, so a missing column can never affect the profile fields above. */
+export async function loadPrimaryGoal(): Promise<string | null> {
+  try {
+    const { data, error } = await getSupabase().from("profiles").select("primary_goal").maybeSingle();
+    return error ? null : (data?.primary_goal as string | null | undefined) ?? null;
+  } catch { return null; }
+}
+
 /** Last 45 days of daily wellness with per-field provenance (06). Falls back to the plain columns if provenance is missing. */
 export async function loadDaily(today: string): Promise<Section<DailyRow[]>> {
   const sb = getSupabase(), since = addDays(today, -45);

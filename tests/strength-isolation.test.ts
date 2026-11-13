@@ -287,7 +287,7 @@ function fakeSupabase(sub: { current: string }) {
     return json([]);
   };
   const client = createClient("http://localhost:54321", "anon-key", { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: fetch as typeof globalThis.fetch } });
-  return { client, seen, jwt, signInAs: async (u: string) => { sub.current = u; const r = await client.auth.setSession({ access_token: jwt(u), refresh_token: `r-${u}` }); assert.equal(r.error, null); return jwt(u); } };
+  return { client, seen, jwt, signInAs: async (u: string) => { sub.current = u; const tok = jwt(u); const r = await client.auth.setSession({ access_token: tok, refresh_token: `r-${u}` }); assert.equal(r.error, null); return tok; } };
 }
 const opsFor = (): Op[] => [{ op_id: uid(), kind: "session", id: uid(), rev: 1, deleted: false, data: {} }];
 

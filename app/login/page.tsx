@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getSupabase, setRememberMe } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
 import PasswordField from "@/components/PasswordField";
+import { LegalLinks } from "@/components/legal/Legal";
 import { friendlyMessage } from "@/lib/userError";
 
 export default function LoginPage() {
@@ -77,6 +78,7 @@ export default function LoginPage() {
         {message && <div className={`notice ${message.kind}`}>{message.text}</div>}
         {mode === "in" && <Link className="linkbtn" href="/forgot-password" style={{ display: "inline-flex", alignItems: "center", minHeight: 44, fontSize: 14 }}>Forgot password?</Link>}
       </form>
+      <LegalLinks />
     </main>
   );
 }

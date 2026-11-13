@@ -18,23 +18,22 @@ export const DESKTOP_NAV: NavItem[] = [
   { href: "/profile", label: "Profile" },
 ];
 
-/** Mobile bottom bar: four destinations plus "More". */
+/** Mobile bottom bar: Today, Activities, Coach, then "More" (Design System 1.0). Training moved into More; its route is unchanged. */
 export const PRIMARY_NAV: NavItem[] = [
   { href: "/today", label: "Today" },
-  { href: "/training", label: "Training" },
   { href: "/activities", label: "Activities" },
   { href: "/coach", label: "Coach" },
 ];
 
 /** Everything that is not on the bottom bar, in the order the More menu shows it. Derived from the desktop list so no route can be lost. */
-const MORE_ORDER = ["/strength", "/biomarkers", "/timeline", "/races", "/supplements", "/integrations", "/profile"];
+const MORE_ORDER = ["/training", "/strength", "/biomarkers", "/timeline", "/races", "/supplements", "/integrations", "/profile"];
 export const MORE_NAV: NavItem[] = MORE_ORDER.map((h) => DESKTOP_NAV.find((n) => n.href === h)!);
 
 /** A route is active on its own path and on anything below it (/races/12 keeps Races active). */
 export const isActive = (path: string, href: string): boolean => path === href || path.startsWith(href + "/");
 
 /** The destination of the bottom bar that is highlighted: a primary item, "more" for any route inside More, or null (e.g. an unknown path). */
-export type BottomTab = "today" | "training" | "activities" | "coach" | "more";
+export type BottomTab = "today" | "activities" | "coach" | "more";
 export function activeTab(path: string): BottomTab | null {
   const p = PRIMARY_NAV.find((n) => isActive(path, n.href));
   if (p) return p.href.slice(1) as BottomTab;

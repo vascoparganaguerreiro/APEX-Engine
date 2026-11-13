@@ -44,27 +44,32 @@ function Metric({ label, r, fmt, today, extra }: { label: string; r: Reading | n
 }
 
 // ------------------------------------------------------------------ 1 Wellness
-export function WellnessCard({ s, w, today, goal, whoop, onLog }: { s: Section<unknown>; w: WellnessSummary | null; today: string; goal: number | null; whoop: { value: number; day: string | null } | null; onLog: () => void }) {
+/** The detail card adds what the headline metrics above do not show: where each number came from and when, the readiness breakdown, the device sleep score and what is
+ *  missing from the estimate. It does not repeat the values or explanations. `quiet`: the Next step card is already asking for wellness (or saying it is unavailable).
+ *  `guidanceAbove`: the Next step card already shows today's guidance. */
+export function WellnessCard({ s, w, today, goal, onLog, quiet = false, guidanceAbove = false }: { s: Section<unknown>; w: WellnessSummary | null; today: string; goal: number | null; onLog: () => void; quiet?: boolean; guidanceAbove?: boolean }) {
   const status = !w ? null : w.state === "current" ? <Fresh f="today" /> : w.state === "partial" ? <span className="td-pill f-yesterday">Partly today</span> : w.state === "stale" ? <Fresh f="stale" /> : <Fresh f="missing" />;
   return (
     <Module title="Wellness" accent="green" href="/integrations" linkText="Data sources" status={<>{status}<button type="button" className="td-inline" onClick={onLog}>Log a day</button></>} className="td-span-4">
-      {s.status === "unavailable" ? <Unavailable s={s} /> : !w || w.state === "missing" ? (
+      {quiet && (s.status === "unavailable" || !w || w.state === "missing") ? (
+        <Empty>{s.status === "unavailable" ? "Not shown while wellness data is unavailable." : "Where each reading came from, and how the readiness estimate was made, will appear here once today's wellness is in."}</Empty>
+      ) : s.status === "unavailable" ? <Unavailable s={s} /> : !w || w.state === "missing" ? (
         <EmptyState compact copy={EMPTY["today-wellness"]} onAction={onLog} />
       ) : (
         <>
-          <div className="td-metrics3">
-            <Metric label="HRV (rMSSD)" r={w.hrv} today={today} fmt={(v) => `${Math.round(v)} ms`}
-              extra={w.hrvVsBaseline && <em className={w.hrvVsBaseline.pct >= 0 ? "up" : "down"}>{w.hrvVsBaseline.pct >= 0 ? "+" : ""}{w.hrvVsBaseline.pct}% vs your {w.hrvVsBaseline.days}-day average ({w.hrvVsBaseline.mean} ms)</em>} />
-            <Metric label="Resting HR" r={w.rhr} today={today} fmt={(v) => `${Math.round(v)} bpm`}
-              extra={w.rhrVsBaseline && <em className={w.rhrVsBaseline.diff <= 0 ? "up" : "down"}>{w.rhrVsBaseline.diff > 0 ? "+" : ""}{w.rhrVsBaseline.diff} bpm vs your {w.rhrVsBaseline.days}-day average</em>} />
-            <Metric label="Sleep" r={w.sleep} today={today} fmt={(v) => `${Math.floor(v / 60)}h ${String(Math.round(v % 60)).padStart(2, "0")}m`}
-              extra={<em className="muted">{goal ? `goal ${goal.toFixed(1)} h` : <>no sleep goal set (<Link href="/profile">Profile</Link>)</>}</em>} />
+          <div className="td-sources">
+            <b className="td-subhead">Where today&apos;s numbers come from</b>
+            <ul>
+              {([["HRV", w.hrv], ["Resting HR", w.rhr], ["Sleep", w.sleep]] as const).filter(([, r]) => r).map(([label, r]) => (
+                <li key={label}><span>{label}</span><span className="td-meta">{when(r!, today)}{r!.source ? ` · ${SOURCE_TEXT[r!.source] ?? r!.source}` : ""}</span></li>
+              ))}
+            </ul>
+            {w.sleep && !goal && <p className="td-meta">No sleep goal is set, so sleep is left out of the readiness estimate. <Link href="/profile">Set one in Profile</Link>.</p>}
           </div>
-          <ReadinessBlock est={w.estimate} />
-          {(w.sleepScore || whoop) && (
+          <ReadinessBlock est={w.estimate} detail guidanceAbove={guidanceAbove} />
+          {w.sleepScore && (
             <div className="td-vendor">
               {w.sleepScore && <span>Sleep score <b>{Math.round(w.sleepScore.value)}</b> <span className="td-meta">device score via Intervals.icu · {when(w.sleepScore, today)}</span></span>}
-              {whoop && <span>WHOOP Recovery <b>{Math.round(whoop.value)}%</b> <span className="td-meta">WHOOP&apos;s own score{whoop.day ? ` · ${relDay(whoop.day, today)}` : ""}</span></span>}
             </div>
           )}
         </>
@@ -75,7 +80,7 @@ export function WellnessCard({ s, w, today, goal, whoop, onLog }: { s: Section<u
 
 /** APEX Readiness Estimate: deterministic (lib/today/model.ts readinessEstimate). Shows its inputs, references, confidence and limits. */
 const CONF_TEXT: Record<string, string> = { high: "High confidence", medium: "Medium confidence", low: "Low confidence · provisional" };
-export function ReadinessBlock({ est }: { est: ReadinessEstimate }) {
+export function ReadinessBlock({ est, detail = false, guidanceAbove = false }: { est: ReadinessEstimate; detail?: boolean; guidanceAbove?: boolean }) {
   if (est.status === "insufficient") {
     return (
       <div className="td-ready insufficient" aria-label={est.name}>
@@ -90,9 +95,9 @@ export function ReadinessBlock({ est }: { est: ReadinessEstimate }) {
   }
   return (
     <div className={`td-ready${est.provisional ? " provisional" : ""}`} aria-label={est.name}>
-      <div className="td-readyscore" style={{ ["--p" as string]: `${est.score}%` }}><b>{est.score}</b><small>/100</small></div>
+      {!detail && <div className="td-readyscore" style={{ ["--p" as string]: `${est.score}%` }}><b>{est.score}</b><small>/100</small></div>}
       <div style={{ minWidth: 0 }}>
-        <b>{est.name}</b> <span className={`pill conf-${est.confidence}`}>{CONF_TEXT[est.confidence]}</span>
+        {detail ? <b className="td-subhead">How the readiness estimate was made</b> : <><b>{est.name}</b> <span className={`pill conf-${est.confidence}`}>{CONF_TEXT[est.confidence]}</span></>}
         <ul className="td-reasons">
           {est.components.map((c) => <li key={c.key}><b>{c.label}</b> today {c.today} {c.unit} vs {c.referenceLabel} {c.reference} {c.unit} <span className="td-meta">· sub-score {c.subscore} · counts {Math.round(c.effectiveWeight * 100)}%</span></li>)}
           {est.excluded.map((x) => <li key={x} className="td-meta">Not used: {x}</li>)}
@@ -101,7 +106,8 @@ export function ReadinessBlock({ est }: { est: ReadinessEstimate }) {
           <summary>How it is calculated</summary>
           <p className="td-meta">Only today&apos;s measurements are used. HRV: how many standard deviations today is from your average of the previous 28 days (at least 5 days), limited to ±2 and mapped to 0–100. Resting HR: bpm below (better) or above your 28-day average, limited to ±8 and mapped to 0–100. Sleep: hours slept as a share of your sleep goal, up to 100. Weights HRV 45%, resting HR 25%, sleep 30%; a measurement that cannot be used is left out and the others are scaled up, never filled in. Confidence: high with all three and baselines of 14+ days; medium with three and 7+ days, or two with 14+ days; otherwise low (provisional).</p>
         </details>
-        {est.guidance ? <p className="small" style={{ margin: "6px 0 0" }}>{est.guidance} You decide.</p>
+        {guidanceAbove ? <p className="td-meta" style={{ margin: "6px 0 0" }}>Today&apos;s guidance is in the Next step above. You decide.</p>
+          : est.guidance ? <p className="small" style={{ margin: "6px 0 0" }}>{est.guidance} You decide.</p>
           : <p className="td-meta" style={{ margin: "6px 0 0" }}>Provisional: too little data or a short baseline, so no training suggestion is made. Go by your plan and how you feel.</p>}
         <p className="td-meta" style={{ margin: "4px 0 0" }}>{est.disclaimer}</p>
       </div>

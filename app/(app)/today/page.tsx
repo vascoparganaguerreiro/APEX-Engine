@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/lib/useAuth";
 import { addDays, trendSeries } from "@/lib/engine";
 import { dailyLoads } from "@/lib/activities";
@@ -9,19 +10,23 @@ import {
   type ActLite, type DailyRow, type PanelLite, type ResultLite, type StrengthLite,
 } from "@/lib/today/model";
 import {
-  loadActiveWorkout, loadActivities, loadBiomarkers, loadDaily, loadIntervalsConnected, loadLatestDaily, loadProfileLite, loadRaces, loadStrength, loadSupplements,
+  loadActiveWorkout, loadActivities, loadBiomarkers, loadDaily, loadIntervalsConnected, loadLatestDaily, loadPrimaryGoal, loadProfileLite, loadRaces, loadStrength, loadSupplements,
   loadWhoopRecovery, type ProfileLite, type Section,
 } from "@/lib/today/load";
 import type { Intake, Schedule, Supplement } from "@/lib/health/core";
 import type { AssessmentRow } from "@/lib/coach/client";
 import { BiomarkersCard, EnduranceCard, RaceCard, StrengthCard, SupplementsCard, WellnessCard } from "@/components/today/Modules";
 import FiveDay from "@/components/today/FiveDay";
+import KeyMetrics from "@/components/today/KeyMetrics";
+import NextActionCard from "@/components/today/NextActionCard";
+import { LENS_LABEL, LENS_SECTIONS, lensFromGoal, nextAction, type SectionKey } from "@/lib/today/lens";
 import { loadPlannedRange } from "@/lib/calendar/load";
 import { OMNI_RUN_EVENT, quickFromSearch, type OmniRunDetail } from "@/lib/omni";
 import type { PlannedWorkout } from "@/lib/calendar/model";
 import CoachInsight from "@/components/today/CoachInsight";
 import QuickLog, { type QuickTab } from "@/components/today/QuickLog";
 import TrendChart from "@/components/TrendChart";
+import SectionHeader from "@/components/ui/SectionHeader";
 
 const deviceZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return "UTC"; } };
 const LOADING = { status: "unavailable", reason: "Loading…" } as const;
@@ -47,6 +52,7 @@ export default function TodayPage() {
   const [intervals, setIntervals] = useState(false);
   const [quick, setQuick] = useState<{ open: boolean; tab: QuickTab }>({ open: false, tab: "wellness" });
   const [trendRange, setTrendRange] = useState<14 | 30>(14);
+  const [primaryGoal, setPrimaryGoal] = useState<string | null | undefined>(undefined);   // undefined = still loading
 
   // Every module loads on its own: one failing (or a migration not applied yet) never blocks the others.
   const loadAll = useCallback(async (day: string) => {
@@ -62,6 +68,7 @@ export default function TodayPage() {
     void loadWhoopRecovery().then(setWhoop);
     void loadIntervalsConnected().then(setIntervals);
   }, []);
+  useEffect(() => { if (session) void loadPrimaryGoal().then(setPrimaryGoal); }, [session]);
   useEffect(() => { if (session) void loadProfileLite().then(setProfile).catch(() => setProfile({ display_name: null, timezone: null, sleep_goal_h: null })); }, [session]);
   useEffect(() => { if (session && profile) void loadAll(today); }, [session, profile, today, loadAll]);
   useEffect(() => { const t = window.setInterval(() => setNow(new Date()), 60_000); return () => window.clearInterval(t); }, []);   // greeting and "today" roll over at midnight
@@ -86,8 +93,21 @@ export default function TodayPage() {
   }), [today, tz, races, acts, strength, active, sups, sup, planned]);
 
   const name = profile?.display_name;
-  const lines = w ? overview({ w, e, st, sup, race, today }) : [];
+  const { lens, basis } = lensFromGoal(primaryGoal);
+  const allLines = w ? overview({ w, e, st, sup, race, today }) : [];
   const openQuick = (tab: QuickTab) => setQuick({ open: true, tab });
+  const wellnessProblem = daily?.status === "unavailable" ? daily.reason : null;
+  const action = nextAction({ w, loading: daily === null, activeWorkout: active, sup, problem: wellnessProblem });
+  // The overview's first line is always about wellness. When the Next step card is already asking for it, that line is not repeated.
+  const lines = w?.state === "missing" && action.kind === "log-wellness" ? allLines.slice(1) : allLines;
+  const cards: Record<SectionKey, React.ReactNode> = {
+    wellness: <WellnessCard s={daily ?? LOADING} w={w} today={today} goal={goal} onLog={() => openQuick("wellness")} quiet={action.kind === "log-wellness" || action.kind === "data-unavailable"} guidanceAbove={action.kind === "readiness-guidance"} key="wellness" />,
+    endurance: <EnduranceCard s={acts ?? LOADING} e={e} today={today} key="endurance" />,
+    strength: <StrengthCard s={strength ?? LOADING} st={st} today={today} active={active} key="strength" />,
+    race: <RaceCard s={races ?? LOADING} race={race} today={today} key="race" />,
+    supplements: <SupplementsCard s={sups ?? LOADING} sup={sup} onLog={() => openQuick("supplements")} key="supplements" />,
+    biomarkers: <BiomarkersCard s={bio ?? LOADING} b={b} today={today} key="biomarkers" />,
+  };
   // The global Quick actions button (components/omni) opens this same Quick log drawer: by event when Today is already open, or through
   // ?quick=wellness|supplements when arriving from another page (read once, then removed from the address).
   useEffect(() => {
@@ -110,16 +130,18 @@ export default function TodayPage() {
           <div className="eyebrow">{longDate(today)}{profile?.timezone && profile.timezone !== deviceZone() ? ` · ${tz}` : ""}</div>
           <h1 className="td-hello">{greeting(hourIn(now, tz))}{name ? `, ${name}` : ""}.</h1>
           {lines.length > 0 ? <ul className="td-overview">{lines.map((l) => <li key={l}>{l}</li>)}</ul> : <p className="td-meta">{daily ? "" : "Loading your day…"}</p>}
+          <p className="td-meta td-lens">
+            {primaryGoal === undefined ? "" : basis === "goal" ? <>{LENS_LABEL[lens]} view, based on your goal in <Link href="/profile">Profile</Link>.</> : <>{LENS_LABEL[lens]} view (default). <Link href="/profile">Set a goal in Profile</Link> to arrange Today for you.</>}
+          </p>
         </div>
       </header>
 
+      <NextActionCard a={action} onAction={(k) => openQuick(k === "log-supplements" ? "supplements" : "wellness")} />
+      <KeyMetrics lens={lens} nextKind={action.kind} loading={daily === null} input={{ w, wellnessProblem, e, st, whoop, sleepGoalH: goal, today }} />
+      <SectionHeader title="Today in detail" />
+
       <div className="td-bento">
-        <WellnessCard s={daily ?? LOADING} w={w} today={today} goal={goal} whoop={whoop} onLog={() => openQuick("wellness")} />
-        <RaceCard s={races ?? LOADING} race={race} today={today} />
-        <EnduranceCard s={acts ?? LOADING} e={e} today={today} />
-        <StrengthCard s={strength ?? LOADING} st={st} today={today} active={active} />
-        <SupplementsCard s={sups ?? LOADING} sup={sup} onLog={() => openQuick("supplements")} />
-        <BiomarkersCard s={bio ?? LOADING} b={b} today={today} />
+        {LENS_SECTIONS[lens].map((k) => cards[k])}
       </div>
 
       <FiveDay days={days} />
