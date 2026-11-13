@@ -344,8 +344,12 @@ export function nextRaceInfo(race: Race | null, today: string) {
   return cd.past ? null : { race, cd };
 }
 
-/** Two or three short, factual sentences. Missing and stale data are named, never hidden. */
-export function overview(a: { w: WellnessSummary; e: EnduranceSummary | null; st: StrengthSummary | null; sup: SupplementSummary | null; race: Race | null; today: string }): string[] {
+export type OverviewPart = "wellness" | "last" | "race" | "supplements";
+/** Two or three short, factual sentences. Missing and stale data are named, never hidden. `order` only decides which sentence comes first (the experience
+ *  view passes its own, lib/today/lens.ts LENS_OVERVIEW); the sentences themselves and what they say are the same for every view. */
+export function overview(a: { w: WellnessSummary; e: EnduranceSummary | null; st: StrengthSummary | null; sup: SupplementSummary | null; race: Race | null; today: string },
+  order: readonly OverviewPart[] = ["wellness", "last", "race", "supplements"]): string[] {
+  const parts: Record<OverviewPart, string | null> = { wellness: null, last: null, race: null, supplements: null };
   const out: string[] = [];
   const { w } = a;
   if (w.state === "missing") out.push("No wellness data yet: log a day or connect a device.");
@@ -356,9 +360,13 @@ export function overview(a: { w: WellnessSummary; e: EnduranceSummary | null; st
   }
   const lastTrain = [a.e?.last ? { day: a.e.last.day, what: (a.e.last.title || a.e.last.sport) } : null, a.st?.last ? { day: a.st.last.day, what: a.st.last.title } : null]
     .filter((x): x is { day: string; what: string } => !!x).sort((x, y) => y.day.localeCompare(x.day))[0];
+  parts.wellness = out[0] ?? null; out.length = 0;
   if (lastTrain) out.push(`Last session ${relDay(lastTrain.day, a.today)}: ${lastTrain.what}.`);
+  parts.last = out[0] ?? null; out.length = 0;
   const r = nextRaceInfo(a.race, a.today);
   if (r && r.cd.days <= 120) out.push(`${r.race.name} ${r.cd.days === 0 ? "is today" : r.cd.days === 1 ? "is tomorrow" : `in ${r.cd.days} days`}.`);
+  parts.race = out[0] ?? null; out.length = 0;
   if (a.sup && a.sup.pending > 0) out.push(`${a.sup.pending} supplement dose${a.sup.pending === 1 ? "" : "s"} still to log.`);
-  return out;
+  parts.supplements = out[0] ?? null;
+  return order.map((k) => parts[k]).filter((x): x is string => x !== null);
 }

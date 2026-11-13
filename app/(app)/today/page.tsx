@@ -19,7 +19,7 @@ import { BiomarkersCard, EnduranceCard, RaceCard, StrengthCard, SupplementsCard,
 import FiveDay from "@/components/today/FiveDay";
 import KeyMetrics from "@/components/today/KeyMetrics";
 import NextActionCard from "@/components/today/NextActionCard";
-import { LENS_LABEL, LENS_SECTIONS, nextAction, type SectionKey } from "@/lib/today/lens";
+import { LENS_LABEL, LENS_OVERVIEW, LENS_SECTIONS, keyInsight, nextAction, type SectionKey } from "@/lib/today/lens";
 import { resolveExperience } from "@/lib/experience";
 import { useExperience } from "@/lib/useExperience";
 import { formatDisplayName } from "@/lib/today/format";
@@ -100,10 +100,11 @@ export default function TodayPage() {
   const name = formatDisplayName(profile?.display_name);   // a clean first name, or none: the stored value is never shown raw
   const { choice: chosenExperience } = useExperience();
   const { lens, basis } = resolveExperience(chosenExperience, primaryGoal);
-  const allLines = w ? overview({ w, e, st, sup, race, today }) : [];
+  const allLines = w ? overview({ w, e, st, sup, race, today }, LENS_OVERVIEW[lens]) : [];
   const openQuick = (tab: QuickTab) => setQuick({ open: true, tab });
   const wellnessProblem = daily?.status === "unavailable" ? daily.reason : null;
-  const action = nextAction({ w, loading: daily === null, activeWorkout: active, sup, problem: wellnessProblem });
+  const action = nextAction({ w, loading: daily === null, activeWorkout: active, sup, problem: wellnessProblem, lens, bio: { loaded: bio?.status === "ok", summary: b } });
+  const insight = daily === null || wellnessProblem ? null : keyInsight(lens, { w, e, st, b, sleepGoalH: goal, today });
   // The overview's first line is always about wellness. When the Next step card is already asking for it, that line is not repeated.
   const lines = w?.state === "missing" && action.kind === "log-wellness" ? allLines.slice(1) : allLines;
   const load = (x: Section<unknown> | null): LoadState => (x === null ? "loading" : x.status === "ok" ? "ok" : "unavailable");
@@ -153,6 +154,7 @@ export default function TodayPage() {
           <div className="eyebrow">{longDate(today)}{profile?.timezone && profile.timezone !== deviceZone() ? ` · ${tz}` : ""}</div>
           <h1 className="td-hello">{greeting(hourIn(now, tz))}{name ? `, ${name}` : ""}.</h1>
           {lines.length > 0 ? <ul className="td-overview">{lines.map((l) => <li key={l}>{l}</li>)}</ul> : <p className="td-meta">{daily ? "" : "Loading your day…"}</p>}
+          {insight && <p className={`td-insight${insight.empty ? " none" : ""}`}><b>Key insight</b> {insight.text}</p>}
           <p className="td-meta td-lens">
             {primaryGoal === undefined ? "" : basis === "chosen" ? <>{LENS_LABEL[lens]} experience, chosen in <Link href="/profile#profile-experience">Profile</Link>. Every module is still below.</> : basis === "goal" ? <>{LENS_LABEL[lens]} view, based on your goal in <Link href="/profile">Profile</Link>.</> : <>{LENS_LABEL[lens]} view (default). <Link href="/profile#profile-experience">Choose an experience in Profile</Link> to arrange Today for you.</>}
           </p>

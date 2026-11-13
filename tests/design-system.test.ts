@@ -196,7 +196,7 @@ test("next step: a failed wellness load shows 'data unavailable', never 'you hav
   assert.equal(nextAction({ w: null, loading: true, activeWorkout: null, sup: null, problem }).kind, "loading");
   assert.equal(nextAction({ w: null, loading: false, activeWorkout: { title: "Push day" }, sup: null, problem }).kind, "resume-workout");
   const page = read("app/(app)/today/page.tsx");
-  assert.match(page, /const action = nextAction\(\{ w, loading: daily === null, activeWorkout: active, sup, problem: wellnessProblem \}\)/, "the load problem is passed in");
+  assert.match(page, /const action = nextAction\(\{ w, loading: daily === null, activeWorkout: active, sup, problem: wellnessProblem, lens, bio: \{ loaded: bio\?\.status === "ok", summary: b \} \}\)/, "the load problem is passed in, together with the experience");
   assert.match(page, /const wellnessProblem = daily\?\.status === "unavailable" \? daily\.reason : null/);
   assert.match(read("components/today/NextActionCard.tsx"), /const cta = a\.cta[^]*\{cta && /, "the card renders without a button when there is no action");
 });
