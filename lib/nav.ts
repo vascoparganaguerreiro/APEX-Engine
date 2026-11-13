@@ -25,9 +25,17 @@ export const PRIMARY_NAV: NavItem[] = [
   { href: "/coach", label: "Coach" },
 ];
 
-/** Everything that is not on the bottom bar, in the order the More menu shows it. Derived from the desktop list so no route can be lost. */
-const MORE_ORDER = ["/training", "/strength", "/biomarkers", "/timeline", "/races", "/supplements", "/integrations", "/profile"];
-export const MORE_NAV: NavItem[] = MORE_ORDER.map((h) => DESKTOP_NAV.find((n) => n.href === h)!);
+/** The More sheet's groups. Destinations are looked up in the desktop list (same routes, same labels), so none can be invented, renamed or lost.
+ *  "account" holds settings-type destinations; the account ACTIONS (who is signed in, Sign out) are not destinations and are drawn separately. */
+export interface NavGroup { id: "train" | "health" | "account"; label: string; items: NavItem[] }
+const pick = (...hrefs: string[]): NavItem[] => hrefs.map((h) => DESKTOP_NAV.find((n) => n.href === h)!);
+export const MORE_GROUPS: NavGroup[] = [
+  { id: "train", label: "Training", items: pick("/training", "/strength", "/races") },
+  { id: "health", label: "Health", items: pick("/biomarkers", "/supplements", "/timeline") },
+  { id: "account", label: "Settings and account", items: pick("/integrations", "/profile") },
+];
+/** Every destination that is not on the bottom bar, in the order the More sheet shows them. */
+export const MORE_NAV: NavItem[] = MORE_GROUPS.flatMap((g) => g.items);
 
 /** A route is active on its own path and on anything below it (/races/12 keeps Races active). */
 export const isActive = (path: string, href: string): boolean => path === href || path.startsWith(href + "/");
@@ -49,3 +57,8 @@ export function opensKeyboard(el: { tagName?: string; isContentEditable?: boolea
   if (tag !== "INPUT") return false;
   return !["button", "submit", "reset", "checkbox", "radio", "range", "file", "color", "image"].includes(String(el.type ?? "text").toLowerCase());
 }
+
+/** A short touchscreen held sideways (a phone in landscape): wider than 800px but not tall enough for the desktop layout. */
+export const SHORT_LANDSCAPE_MEDIA = "(orientation: landscape) and (pointer: coarse) and (max-height: 500px) and (max-width: 1000px)";
+/** The phone layout (bottom bar, compact sheets). Must stay equal to the CSS query in app/globals.css (tests compare them). */
+export const PHONE_MEDIA = `(max-width: 800px), ${SHORT_LANDSCAPE_MEDIA}`;

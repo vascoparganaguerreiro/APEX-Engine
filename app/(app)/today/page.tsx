@@ -20,6 +20,8 @@ import FiveDay from "@/components/today/FiveDay";
 import KeyMetrics from "@/components/today/KeyMetrics";
 import NextActionCard from "@/components/today/NextActionCard";
 import { LENS_LABEL, LENS_SECTIONS, lensFromGoal, nextAction, type SectionKey } from "@/lib/today/lens";
+import { formatDisplayName } from "@/lib/today/format";
+import { setupModel, type LoadState } from "@/lib/today/setup";
 import { loadPlannedRange } from "@/lib/calendar/load";
 import { OMNI_RUN_EVENT, quickFromSearch, type OmniRunDetail } from "@/lib/omni";
 import type { PlannedWorkout } from "@/lib/calendar/model";
@@ -50,6 +52,7 @@ export default function TodayPage() {
   const [active, setActive] = useState<{ title: string; startedAt: string } | null>(null);
   const [whoop, setWhoop] = useState<{ value: number; day: string | null } | null>(null);
   const [intervals, setIntervals] = useState(false);
+  const [intervalsKnown, setIntervalsKnown] = useState(false);   // false until the connection check has answered (then no "connect a source" hint is shown)
   const [quick, setQuick] = useState<{ open: boolean; tab: QuickTab }>({ open: false, tab: "wellness" });
   const [trendRange, setTrendRange] = useState<14 | 30>(14);
   const [primaryGoal, setPrimaryGoal] = useState<string | null | undefined>(undefined);   // undefined = still loading
@@ -66,7 +69,7 @@ export default function TodayPage() {
     void loadLatestDaily().then(setCoach);
     void loadActiveWorkout().then(setActive);
     void loadWhoopRecovery().then(setWhoop);
-    void loadIntervalsConnected().then(setIntervals);
+    void loadIntervalsConnected().then((v) => { setIntervals(v); setIntervalsKnown(true); });
   }, []);
   useEffect(() => { if (session) void loadPrimaryGoal().then(setPrimaryGoal); }, [session]);
   useEffect(() => { if (session) void loadProfileLite().then(setProfile).catch(() => setProfile({ display_name: null, timezone: null, sleep_goal_h: null })); }, [session]);
@@ -92,7 +95,7 @@ export default function TodayPage() {
     planned: planned?.status === "ok" ? planned.data.map((p) => ({ ...p, linked: p.completed_activity_id !== null || p.completed_strength_session_id !== null })) : [],
   }), [today, tz, races, acts, strength, active, sups, sup, planned]);
 
-  const name = profile?.display_name;
+  const name = formatDisplayName(profile?.display_name);   // a clean first name, or none: the stored value is never shown raw
   const { lens, basis } = lensFromGoal(primaryGoal);
   const allLines = w ? overview({ w, e, st, sup, race, today }) : [];
   const openQuick = (tab: QuickTab) => setQuick({ open: true, tab });
@@ -100,6 +103,23 @@ export default function TodayPage() {
   const action = nextAction({ w, loading: daily === null, activeWorkout: active, sup, problem: wellnessProblem });
   // The overview's first line is always about wellness. When the Next step card is already asking for it, that line is not repeated.
   const lines = w?.state === "missing" && action.kind === "log-wellness" ? allLines.slice(1) : allLines;
+  const load = (x: Section<unknown> | null): LoadState => (x === null ? "loading" : x.status === "ok" ? "ok" : "unavailable");
+  const hasStrength = !!st?.last || !!active, hasSupplements = !!sup && sup.active > 0;
+  // A detail card whose data loaded fine but is empty is not drawn (it would only repeat an empty message): the setup area lists it, quietly.
+  // A card that could not load, or has not loaded yet, is always drawn, so errors and loading are never hidden.
+  const hidden: Record<SectionKey, boolean> = {
+    wellness: false,
+    endurance: acts?.status === "ok" && (!e || !e.last),
+    strength: strength?.status === "ok" && !hasStrength,
+    race: races?.status === "ok" && !race,
+    biomarkers: bio?.status === "ok" && !b,
+    supplements: sups?.status === "ok" && !hasSupplements,
+  };
+  const setup = setupModel({
+    wellness: load(daily), wellnessMissing: w?.state === "missing", hasSleepReading: !!w?.sleep, sleepGoalH: goal,
+    activities: load(acts), hasActivity: acts?.status === "ok" && acts.data.length > 0, strength: load(strength), hasStrength, intervalsConnected: intervals || !intervalsKnown,
+    race: load(races), hasRace: !!race, biomarkers: load(bio), hasBiomarkers: !!b, supplements: load(sups), hasSupplements,
+  });
   const cards: Record<SectionKey, React.ReactNode> = {
     wellness: <WellnessCard s={daily ?? LOADING} w={w} today={today} goal={goal} onLog={() => openQuick("wellness")} quiet={action.kind === "log-wellness" || action.kind === "data-unavailable"} guidanceAbove={action.kind === "readiness-guidance"} key="wellness" />,
     endurance: <EnduranceCard s={acts ?? LOADING} e={e} today={today} key="endurance" />,
@@ -137,11 +157,11 @@ export default function TodayPage() {
       </header>
 
       <NextActionCard a={action} onAction={(k) => openQuick(k === "log-supplements" ? "supplements" : "wellness")} />
-      <KeyMetrics lens={lens} nextKind={action.kind} loading={daily === null} input={{ w, wellnessProblem, e, st, whoop, sleepGoalH: goal, today }} />
+      <KeyMetrics lens={lens} nextKind={action.kind} setup={setup} loading={daily === null} input={{ w, wellnessProblem, e, st, whoop, sleepGoalH: goal, today }} />
       <SectionHeader title="Today in detail" />
 
       <div className="td-bento">
-        {LENS_SECTIONS[lens].map((k) => cards[k])}
+        {LENS_SECTIONS[lens].filter((k) => !hidden[k]).map((k) => cards[k])}
       </div>
 
       <FiveDay days={days} />

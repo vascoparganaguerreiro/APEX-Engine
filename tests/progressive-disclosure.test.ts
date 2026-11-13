@@ -160,7 +160,7 @@ test("CSS: restrained expander, 48px target, focus ring, summary stays readable 
   assert.match(b, /\.disc\[open\]>summary \.disc-chev\{transform:rotate\(180deg\)\}/);
   assert.match(b, /@media \(max-width:520px\)\{[^@]*\.disc-sum\{order:3;flex-basis:100%;max-width:none;text-align:left;white-space:normal\}/, "the summary (status) wraps under the title instead of being cut off");
   assert.match(b, /@media \(prefers-reduced-motion:reduce\)\{\.disc-chev\{transition:none\}\}/);
-  assert.match(b, /@media \(max-width:800px\)\{\.savebar\{bottom:var\(--bnav-h\)\}\}/);
+  assert.match(b, /@media \(max-width:800px\),\(orientation:landscape\) and \(pointer:coarse\) and \(max-height:500px\) and \(max-width:1000px\)\{\.savebar\{bottom:var\(--bnav-h\)\}\}/);
   assert.match(b, /\.conn-chip\.attn\{border-color:#4a2327\}\.conn-chip\.attn \.conn-dot\{background:var\(--red\)\}/);
   assert.doesNotMatch(b, /box-shadow|glow/, "no glow");
 });

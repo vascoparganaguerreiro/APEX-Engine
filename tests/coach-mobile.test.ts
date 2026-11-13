@@ -9,7 +9,7 @@ const page = read("app/(app)/coach/page.tsx");
 const chat = read("components/coach/ChatPanel.tsx");
 const css = read("app/globals.css");
 const block = css.slice(css.indexOf("/* global quick actions"));
-const media = block.slice(block.indexOf("@media (max-width:800px){"));
+const media = block.slice(block.indexOf("@media (max-width:800px),(orientation:landscape) and (pointer:coarse) and (max-height:500px) and (max-width:1000px){"));
 
 test("context header reads 'Coach Context · n/total active' from the categories the user actually shares", () => {
   assert.ok(COACH_CATEGORIES.length >= 1, "the header's total is the real number of shareable categories (7 today)");
@@ -34,7 +34,7 @@ test("nothing is removed: the sharing panel, the four context tiles and the Miss
 });
 
 test("desktop keeps the original layout: header hidden, body always shown; the collapse exists only inside the phone media query", () => {
-  const before = block.slice(0, block.indexOf("@media (max-width:800px){"));
+  const before = block.slice(0, block.indexOf("@media (max-width:800px),(orientation:landscape) and (pointer:coarse) and (max-height:500px) and (max-width:1000px){"));
   assert.match(before, /\.coachctx-head\{display:none\}/); assert.doesNotMatch(before, /\.coachctx-body\{display:none\}/);
   assert.match(media, /\.coachctx-body\{display:none;[^}]*\}\.coachctx\.open \.coachctx-body\{display:block\}/);
   assert.match(before, /\.sug-strip\{display:none\}/, "the phone-only suggestion row is hidden by default");

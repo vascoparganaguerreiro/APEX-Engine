@@ -8,10 +8,11 @@ import { formatDistance, formatDuration } from "@/lib/activities";
 import { formatDuration as raceTime, formatDistance as raceDistance, PRIORITY_LABEL } from "@/lib/races";
 import { racePhase } from "@/lib/engine";
 import {
-  SOURCE_TEXT, relDay, shortDate, nextRaceInfo, type BiomarkerSummary, type EnduranceSummary, type Freshness, type Reading, type StrengthSummary,
+  relDay, shortDate, nextRaceInfo, type BiomarkerSummary, type EnduranceSummary, type Freshness, type Reading, type StrengthSummary,
   type ReadinessEstimate, type SupplementSummary, type WellnessSummary,
 } from "@/lib/today/model";
 import type { Race } from "@/lib/races";
+import { formFacts, sourceText, sportLabel } from "@/lib/today/format";
 import type { Section } from "@/lib/today/load";
 
 type Accent = "green" | "blue" | "amber" | "violet" | "red" | "teal";
@@ -32,17 +33,6 @@ const Empty = ({ children }: { children: ReactNode }) => <p className="td-empty"
 const Unavailable = ({ s }: { s: { status: "unavailable"; reason: string } }) => <Empty>{s.reason}</Empty>;
 const when = (r: Reading, today: string) => (r.freshness === "today" ? "today" : `${relDay(r.day, today)} · ${shortDate(r.day)}`);
 
-function Metric({ label, r, fmt, today, extra }: { label: string; r: Reading | null; fmt: (v: number) => string; today: string; extra?: ReactNode }) {
-  return (
-    <div className={`td-metric${r && r.freshness !== "today" ? " dim" : ""}`}>
-      <small>{label}</small>
-      {r ? <b>{fmt(r.value)}</b> : <b className="td-none">—</b>}
-      <span className="td-meta">{r ? <>{when(r, today)}{r.source ? ` · ${SOURCE_TEXT[r.source] ?? r.source}` : ""}</> : "not recorded"}</span>
-      {extra}
-    </div>
-  );
-}
-
 // ------------------------------------------------------------------ 1 Wellness
 /** The detail card adds what the headline metrics above do not show: where each number came from and when, the readiness breakdown, the device sleep score and what is
  *  missing from the estimate. It does not repeat the values or explanations. `quiet`: the Next step card is already asking for wellness (or saying it is unavailable).
@@ -60,13 +50,13 @@ export function WellnessCard({ s, w, today, goal, onLog, quiet = false, guidance
           <div className="td-sources">
             <b className="td-subhead">Where today&apos;s numbers come from</b>
             <ul>
-              {([["HRV", w.hrv], ["Resting HR", w.rhr], ["Sleep", w.sleep]] as const).filter(([, r]) => r).map(([label, r]) => (
-                <li key={label}><span>{label}</span><span className="td-meta">{when(r!, today)}{r!.source ? ` · ${SOURCE_TEXT[r!.source] ?? r!.source}` : ""}</span></li>
+              {([["HRV (rMSSD)", w.hrv], ["Resting heart rate", w.rhr], ["Sleep", w.sleep]] as const).filter(([, r]) => r).map(([label, r]) => (
+                <li key={label}><span>{label}</span><span className="td-meta">{when(r!, today)} · {sourceText(r!.source)}</span></li>
               ))}
             </ul>
             {w.sleep && !goal && <p className="td-meta">No sleep goal is set, so sleep is left out of the readiness estimate. <Link href="/profile">Set one in Profile</Link>.</p>}
           </div>
-          <ReadinessBlock est={w.estimate} detail guidanceAbove={guidanceAbove} />
+          <ReadinessBlock est={w.estimate} guidanceAbove={guidanceAbove} />
           {w.sleepScore && (
             <div className="td-vendor">
               {w.sleepScore && <span>Sleep score <b>{Math.round(w.sleepScore.value)}</b> <span className="td-meta">device score via Intervals.icu · {when(w.sleepScore, today)}</span></span>}
@@ -78,9 +68,9 @@ export function WellnessCard({ s, w, today, goal, onLog, quiet = false, guidance
   );
 }
 
-/** APEX Readiness Estimate: deterministic (lib/today/model.ts readinessEstimate). Shows its inputs, references, confidence and limits. */
-const CONF_TEXT: Record<string, string> = { high: "High confidence", medium: "Medium confidence", low: "Low confidence · provisional" };
-export function ReadinessBlock({ est, detail = false, guidanceAbove = false }: { est: ReadinessEstimate; detail?: boolean; guidanceAbove?: boolean }) {
+/** APEX Readiness Estimate, how it was made: deterministic (lib/today/model.ts readinessEstimate). The score, confidence and band are in Key metrics and the Next step card;
+ *  this block adds the exclusions and limits (visible) and the inputs, weights and method (expandable). */
+export function ReadinessBlock({ est, guidanceAbove = false }: { est: ReadinessEstimate; guidanceAbove?: boolean }) {
   if (est.status === "insufficient") {
     return (
       <div className="td-ready insufficient" aria-label={est.name}>
@@ -95,16 +85,13 @@ export function ReadinessBlock({ est, detail = false, guidanceAbove = false }: {
   }
   return (
     <div className={`td-ready${est.provisional ? " provisional" : ""}`} aria-label={est.name}>
-      {!detail && <div className="td-readyscore" style={{ ["--p" as string]: `${est.score}%` }}><b>{est.score}</b><small>/100</small></div>}
       <div style={{ minWidth: 0 }}>
-        {detail ? <b className="td-subhead">How the readiness estimate was made</b> : <><b>{est.name}</b> <span className={`pill conf-${est.confidence}`}>{CONF_TEXT[est.confidence]}</span></>}
-        <ul className="td-reasons">
-          {est.components.map((c) => <li key={c.key}><b>{c.label}</b> today {c.today} {c.unit} vs {c.referenceLabel} {c.reference} {c.unit} <span className="td-meta">· sub-score {c.subscore} · counts {Math.round(c.effectiveWeight * 100)}%</span></li>)}
-          {est.excluded.map((x) => <li key={x} className="td-meta">Not used: {x}</li>)}
-        </ul>
+        <b className="td-subhead">How the readiness estimate was made</b>
+        {est.excluded.length > 0 && <ul className="td-reasons">{est.excluded.map((x) => <li key={x} className="td-meta">Not used: {x}</li>)}</ul>}
         <details className="td-how">
-          <summary>How it is calculated</summary>
-          <p className="td-meta">Only today&apos;s measurements are used. HRV: how many standard deviations today is from your average of the previous 28 days (at least 5 days), limited to ±2 and mapped to 0–100. Resting HR: bpm below (better) or above your 28-day average, limited to ±8 and mapped to 0–100. Sleep: hours slept as a share of your sleep goal, up to 100. Weights HRV 45%, resting HR 25%, sleep 30%; a measurement that cannot be used is left out and the others are scaled up, never filled in. Confidence: high with all three and baselines of 14+ days; medium with three and 7+ days, or two with 14+ days; otherwise low (provisional).</p>
+          <summary>Calculation details: inputs, weights and method</summary>
+          <ul className="td-reasons">{est.components.map((c) => <li key={c.key}><b>{c.label}</b> today {c.today} {c.unit} vs {c.referenceLabel} {c.reference} {c.unit} <span className="td-meta">· sub-score {c.subscore} · counts {Math.round(c.effectiveWeight * 100)}%</span></li>)}</ul>
+          <p className="td-meta" style={{ marginTop: 6 }}>Only today&apos;s measurements are used. HRV: how many standard deviations today is from your average of the previous 28 days (at least 5 days), limited to ±2 and mapped to 0–100. Resting HR: bpm below (better) or above your 28-day average, limited to ±8 and mapped to 0–100. Sleep: hours slept as a share of your sleep goal, up to 100. Weights HRV 45%, resting HR 25%, sleep 30%; a measurement that cannot be used is left out and the others are scaled up, never filled in. Confidence: high with all three and baselines of 14+ days; medium with three and 7+ days, or two with 14+ days; otherwise low (provisional).</p>
         </details>
         {guidanceAbove ? <p className="td-meta" style={{ margin: "6px 0 0" }}>Today&apos;s guidance is in the Next step above. You decide.</p>
           : est.guidance ? <p className="small" style={{ margin: "6px 0 0" }}>{est.guidance} You decide.</p>
@@ -124,7 +111,7 @@ export function EnduranceCard({ s, e, today }: { s: Section<unknown>; e: Enduran
       {s.status === "unavailable" ? <Unavailable s={s} /> : !e || !e.last ? <EmptyState compact copy={EMPTY["today-endurance"]} /> : (
         <>
           <div className="td-headline">
-            <b>{e.last.title || e.last.sport}</b>
+            <b>{e.last.title || sportLabel(e.last.sport)}</b>
             <span className="td-meta">{shortDate(e.last.day)} · {formatDuration(e.last.duration_s)}{e.last.distance_m ? ` · ${formatDistance(e.last.distance_m)}` : ""}{e.last.load ? ` · load ${Math.round(e.last.load)}` : ""}</span>
           </div>
           <div className="td-bars" role="img" aria-label="Training load per day, last 7 days">
@@ -137,7 +124,13 @@ export function EnduranceCard({ s, e, today }: { s: Section<unknown>; e: Enduran
           </div>
           <div className="td-stats">
             <div><small>7 days</small><b>{e.week.sessions} session{e.week.sessions === 1 ? "" : "s"}</b><span className="td-meta">{formatDuration(e.week.durationS)} · load {e.week.load} (prior 7 days {e.week.prevLoad})</span></div>
-            {e.form ? <div><small>Form (TSB)</small><b>{e.form.tsb > 0 ? "+" : ""}{e.form.tsb}</b><span className="td-meta">{e.form.state} · fitness {e.form.ctl}, fatigue {e.form.atl} (model)</span></div>
+            {e.form ? (() => { const f = formFacts(e.form); return (
+              <>
+                <div><small>Form (TSB)</small><b>{f.tsb}</b><span className="td-meta">{f.state ?? "From the load model"}</span></div>
+                <div><small>Fitness</small><b>{f.fitness}</b><span className="td-meta">load model</span></div>
+                <div><small>Fatigue</small><b>{f.fatigue}</b><span className="td-meta">load model</span></div>
+              </>
+            ); })()
               : <div><small>Form</small><b className="td-none">—</b><span className="td-meta">needs activities with a training load</span></div>}
           </div>
         </>

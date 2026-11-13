@@ -1,10 +1,11 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { PHONE_MEDIA } from "@/lib/nav";
 import { OMNI_OPEN_EVENT, emitRun, filterActions, isPaletteShortcut, moveIndex, resolveTarget, shortcutLabel, type OmniAction, type OmniId } from "@/lib/omni";
 
 // The one global action entry point. Mounted once in the signed-in layout.
-//   phone (<= 800px): a round button above the bottom bar opens a bottom sheet with every action
+//   phone (<= 800px, or a short touchscreen in landscape): a round button above the bottom bar opens a bottom sheet with every action
 //   desktop:          Ctrl+K / Cmd+K (or the button in the sidebar) opens a command palette with search
 // Presentation and routing only: each action opens an existing page, form or drawer (lib/omni.ts); nothing is written from here.
 const ICON: Record<OmniId, React.ReactNode> = {
@@ -44,7 +45,7 @@ export default function OmniActionHost() {
 
   // phone or desktop layout (same breakpoint as the bottom bar)
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 800px)");
+    const mq = window.matchMedia(PHONE_MEDIA);
     const on = () => setCompact(mq.matches);
     on(); mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);

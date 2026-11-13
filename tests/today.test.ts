@@ -56,7 +56,10 @@ test("estimate: named 'APEX Readiness Estimate' and labelled as an estimate, not
   const no = est([]);
   for (const e of [ok, no]) { assert.equal(e.name, "APEX Readiness Estimate"); assert.match(e.disclaimer, /estimate/i); assert.match(e.disclaimer, /not a clinical measurement/i); }
   const ui = readFileSync(new URL("../components/today/Modules.tsx", import.meta.url), "utf8");
-  assert.match(ui, /Insufficient data/); assert.match(ui, /est\.disclaimer/); assert.match(ui, /conf-\$\{est\.confidence\}/);
+  assert.match(ui, /Insufficient data/); assert.match(ui, /est\.disclaimer/);
+  // the confidence is still shown: in the Key metrics card (its details and the Provisional badge), no longer as a second pill in the breakdown block
+  const lens = readFileSync(new URL("../lib/today/lens.ts", import.meta.url), "utf8");
+  assert.match(lens, /\$\{ok\.confidence\} confidence\$\{ok\.provisional \? " \(provisional\)" : ""\}/); assert.doesNotMatch(ui, /conf-\$\{est\.confidence\}|CONF_TEXT/);
 });
 
 test("estimate: at least two valid inputs from TODAY are required; HRV alone gives 'Insufficient data'", () => {

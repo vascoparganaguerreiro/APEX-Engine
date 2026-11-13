@@ -18,6 +18,7 @@ export default function ChatPanel({ intent, suggestions, authorized, consentUser
   const [error, setError] = useState<string | null>(null);
   const end = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLDivElement>(null);
+  const field = useRef<HTMLTextAreaElement>(null);
 
   const refresh = useCallback(async () => { try { setConvs(await listConversations(getSupabase())); } catch { /* history is optional */ } }, []);
   useEffect(() => { void refresh(); }, [refresh]);
@@ -26,13 +27,18 @@ export default function ChatPanel({ intent, suggestions, authorized, consentUser
   useEffect(() => {
     const el = composer.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const set = () => document.documentElement.style.setProperty("--composer-h", `${el.offsetHeight}px`);
+    const set = () => {
+      document.documentElement.style.setProperty("--composer-h", `${el.offsetHeight}px`);
+      if (document.activeElement === field.current) end.current?.scrollIntoView({ block: "end" });   // the field grew: the latest message stays visible above it
+    };
     set();
     const ro = new ResizeObserver(set);
     ro.observe(el);
     return () => { ro.disconnect(); document.documentElement.style.removeProperty("--composer-h"); };
   }, []);
   useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs, busy]);
+  // The message field grows with what is typed (the CSS caps its height, after which it scrolls), and shrinks back after sending.
+  useEffect(() => { const el = field.current; if (!el) return; el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }, [input]);
 
   async function open(id: string) {
     setActive(id); setError(null);
@@ -109,9 +115,14 @@ export default function ChatPanel({ intent, suggestions, authorized, consentUser
           /* phone: the same suggestions as one swipeable row right above the composer, so they never need a scroll (desktop keeps the list above) */
           <div className="sug-strip" role="group" aria-label="Suggested questions">{suggestions.map((s) => <button key={s} type="button" className="chip" onClick={() => void send(s)}>{s}</button>)}</div>
         )}
+        {input.length >= 1800 && <p className="chatcount muted small" role="status" aria-live="polite">{input.length} of 2000 characters</p>}
         <form className="chatinput" onSubmit={(e) => { e.preventDefault(); void send(input); }}>
-          <textarea rows={2} maxLength={2000} value={input} onChange={(e) => setInput(e.target.value)} placeholder={placeholder ?? "Ask APEX Coach..."} aria-label="Message" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(input); } }} />
-          <button className="btn" type="submit" disabled={busy || !input.trim()}>{busy ? "..." : "Send"}</button>
+          <textarea ref={field} rows={1} maxLength={2000} value={input} onChange={(e) => setInput(e.target.value)} placeholder={placeholder ?? "Ask APEX Coach..."} aria-label="Message" enterKeyHint="send" autoComplete="off" autoCapitalize="sentences" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(input); } }} />
+          {/* mouseDown is not allowed to move focus off the field: sending a message keeps the keyboard open for the next one */}
+          <button className="btn sendbtn" type="submit" aria-label="Send message" aria-busy={busy || undefined} disabled={busy || !input.trim()} onMouseDown={(e) => e.preventDefault()}>
+            <span className="sendtxt">{busy ? "..." : "Send"}</span>
+            <svg className="sendico" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5" /></svg>
+          </button>
         </form>
         <p className="muted small" style={{ margin: "6px 0 0" }}>AI-generated guidance based on the data you share. Not medical advice: for symptoms or abnormal results, see a professional.</p>
         </div>

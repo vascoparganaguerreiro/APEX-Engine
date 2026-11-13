@@ -154,7 +154,7 @@ test("presentation only: the host never talks to the database or auth", () => {
 test("CSS: the button exists only on phones, sits above the bar, hides with the keyboard; dialog is above bar and sheets; reduced motion", () => {
   const i = css.indexOf("/* global quick actions"), block = css.slice(i);
   assert.match(block, /\.omni-fab\{display:none\}/);
-  const media = block.slice(block.indexOf("@media (max-width:800px){"));
+  const media = block.slice(block.indexOf("@media (max-width:800px),(orientation:landscape) and (pointer:coarse) and (max-height:500px) and (max-width:1000px){"));
   assert.match(media, /\.omni-fab\{display:grid;[^}]*position:fixed;right:16px;bottom:calc\(var\(--bnav-h\) \+ 16px \+ var\(--composer-h,0px\) \+ var\(--rest-h,0px\)\)/);
   assert.match(read("components/coach/ChatPanel.tsx"), /--composer-h/, "the Coach composer publishes its height so the button never covers Send");
   assert.match(media, /html\.kb-open \.omni-fab\{display:none\}/); assert.match(media, /:root\.kb-open\{--bnav-h:0px\}/);

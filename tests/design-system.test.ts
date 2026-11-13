@@ -35,7 +35,7 @@ test("ui helpers: button, badge, progress and freshness rules", () => {
 test("components: semantic HTML and accessible patterns, no UI framework", () => {
   const btn = read("components/ui/Button.tsx"), metric = read("components/ui/MetricCard.tsx"), prog = read("components/ui/Progress.tsx"), head = read("components/ui/SectionHeader.tsx"), sk = read("components/ui/Skeleton.tsx");
   assert.match(btn, /<Link className=\{cls\} href=/); assert.match(btn, /<button type=/); assert.match(btn, /aria-busy/); assert.match(btn, /disabled=\{b\.disabled \|\| b\.loading\}/);
-  assert.match(metric, /<article/); assert.match(metric, /<h3>/); assert.match(metric, /<details className="ds-explain"><summary>What this means/);
+  assert.match(metric, /<article/); assert.match(metric, /<h3>/); assert.match(metric, /<details className="ds-explain">\s*<summary>Details/);
   assert.match(prog, /role="progressbar"/); assert.match(prog, /aria-valuenow/); assert.match(head, /const H = `h\$\{level\}`/);
   assert.match(sk, /aria-hidden="true"/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)\{\.ds-skel\{animation:none\}\}/);
@@ -80,7 +80,7 @@ test("profile-aware Today: each view orders the SAME trusted data differently; n
   assert.deepEqual(LENS_METRICS.wellness.slice(0, 2), ["sleep", "readiness"]); assert.equal(LENS_SECTIONS.wellness[0], "wellness"); assert.ok(!LENS_METRICS.wellness.includes("form"), "no training-load jargon first for wellness");
   assert.equal(LENS_METRICS.longevity[0], "sleep"); assert.ok(LENS_METRICS.longevity.includes("sessions"), "consistency of activity"); assert.equal(LENS_SECTIONS.longevity[1], "strength", "functional activity early");
   const page = read("app/(app)/today/page.tsx");
-  assert.match(page, /LENS_SECTIONS\[lens\]\.map\(\(k\) => cards\[k\]\)/); assert.match(page, /<KeyMetrics lens=\{lens\}/); assert.match(page, /<NextActionCard/);
+  assert.match(page, /LENS_SECTIONS\[lens\]\.filter\(\(k\) => !hidden\[k\]\)\.map\(\(k\) => cards\[k\]\)/); assert.match(page, /<KeyMetrics lens=\{lens\}/); assert.match(page, /<NextActionCard/);
   assert.match(page, /View, based on your goal|view, based on your goal in/); assert.match(page, /view \(default\)/, "the page says when the default view is used");
 });
 
@@ -93,10 +93,11 @@ const input = (over: Partial<MetricInput> = {}): MetricInput => ({ w: null, well
 
 test("missing data: every metric shows an honest empty state, never a number, and says what to do", () => {
   const specs = metricSpecs(input(), LENS_METRICS.performance);
-  assert.equal(specs.length, LENS_METRICS.performance.length);
+  assert.equal(specs.length, LENS_METRICS.performance.length - 1, "WHOOP recovery is left out when there is no WHOOP value (nothing to show, nothing to promote)");
+  assert.ok(!specs.some((x) => x.key === "recovery"));
+  assert.ok(metricSpecs(input({ whoop: { value: 71, day: TODAY } }), LENS_METRICS.performance).some((x) => x.key === "recovery" && x.value === "71"), "shown when WHOOP data exists");
   for (const s of specs) { assert.equal(s.value, null, `${s.key} has no value`); assert.equal(s.badge, null); assert.ok(s.empty.length > 10, `${s.key} explains what is missing`); assert.ok(s.explain.length > 20); }
   assert.match(specs.find((s) => s.key === "hrv")!.empty, /Quick log or connect a device/);
-  assert.match(specs.find((s) => s.key === "recovery")!.empty, /Connect WHOOP/);
   assert.match(specs.find((s) => s.key === "form")!.empty, /training load/);
   const failed = metricSpecs(input({ wellnessProblem: "Wellness data is not available right now." }), ["hrv", "sleep", "readiness"]);
   assert.ok(failed.every((s) => s.value === null && s.empty === "Wellness data is not available right now."), "a load problem is reported, not hidden");
@@ -171,9 +172,9 @@ test("Omni-Action: only real, existing workflows; reachable on phone and keyboar
 test("responsive: the new components adapt at the phone breakpoint and the shell keeps its layout", () => {
   assert.match(css, /@media \(max-width:520px\)\{\.ds-next\{padding:var\(--sp-4\)\}\.ds-next \.btn\{width:100%\}\.ds-metric-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/);
   assert.match(css, /\.ds-metric-grid\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(220px,1fr\)\)/);
-  assert.match(css, /\.btn\{min-height:44px/, "touch target");
+  assert.match(css, /\.btn\.ds-btn\{min-height:44px\}/, "touch target (design-system buttons only; see tests/touch-and-modal.test.ts)");
   assert.match(css, /\.td-bento\{grid-auto-flow:row dense\}/);
-  assert.match(css, /\.shell\{display:grid;grid-template-columns:240px 1fr/); assert.match(css, /@media\(max-width:800px\)\{\s*\.shell\{grid-template-columns:1fr\}/);
+  assert.match(css, /\.shell\{display:grid;grid-template-columns:240px 1fr/); assert.match(css, /@media \(max-width:800px\),\(orientation:landscape\) and \(pointer:coarse\) and \(max-height:500px\) and \(max-width:1000px\)\{\s*\.shell\{grid-template-columns:1fr\}/);
 });
 
 // ------------------------------------------------------------------ next step: unavailable vs genuinely absent data
@@ -197,7 +198,7 @@ test("next step: a failed wellness load shows 'data unavailable', never 'you hav
   const page = read("app/(app)/today/page.tsx");
   assert.match(page, /const action = nextAction\(\{ w, loading: daily === null, activeWorkout: active, sup, problem: wellnessProblem \}\)/, "the load problem is passed in");
   assert.match(page, /const wellnessProblem = daily\?\.status === "unavailable" \? daily\.reason : null/);
-  assert.match(read("components/today/NextActionCard.tsx"), /const cta = a\.cta;[^]*\{cta && /, "the card renders without a button when there is no action");
+  assert.match(read("components/today/NextActionCard.tsx"), /const cta = a\.cta[^]*\{cta && /, "the card renders without a button when there is no action");
 });
 
 test("next step: when the data loaded, behaviour is unchanged (absent measurements, available measurements, guidance and priority)", () => {
@@ -229,7 +230,7 @@ test("empty data: missing metrics are listed once, grouped by what is missing, a
   assert.match(wellness.message, /Log it in Quick log or connect a device/);
   assert.equal(COUNT(JSON.stringify(g.missing), /Quick log or connect a device/g), 1, "the instruction appears once, not once per metric");
   assert.ok(g.missing.some((x) => /training load/.test(x.message)), "training metrics keep their own, different message");
-  assert.ok(g.missing.some((x) => /WHOOP/.test(x.message)));
+  assert.ok(!g.missing.some((x) => /WHOOP/.test(x.message)), "no WHOOP promotion for people who do not use it");
   // Next step is already asking to log wellness: the wellness lines point to it instead of repeating the instruction
   const asked = groupEmpty(specs, "log-wellness", null);
   assert.equal(COUNT(JSON.stringify(asked.missing), /Quick log or connect a device/g), 0);
@@ -258,7 +259,7 @@ test("empty data: the hero, Next step, metrics and detail card do not each repea
   assert.match(page, /const lines = w\?\.state === "missing" && action\.kind === "log-wellness" \? allLines\.slice\(1\) : allLines;/);
   assert.match(page, /<KeyMetrics lens=\{lens\} nextKind=\{action\.kind\}/);
   assert.match(page, /quiet=\{action\.kind === "log-wellness" \|\| action\.kind === "data-unavailable"\}/); assert.match(page, /guidanceAbove=\{action\.kind === "readiness-guidance"\}/);
-  assert.match(km, /ds-missing/); assert.match(km, /groupEmpty\(/);
+  assert.match(km, /<SetupArea groups=\{missing\} setup=\{setup\}/); assert.match(km, /groupEmpty\(/);
   // the detail card is quiet (one short line) when the Next step card already asks, and keeps the full educational empty state otherwise
   assert.match(mod, /quiet && \(s\.status === "unavailable" \|\| !w \|\| w\.state === "missing"\)/);
   assert.match(mod, /<EmptyState compact copy=\{EMPTY\["today-wellness"\]\} onAction=\{onLog\} \/>/);
@@ -270,18 +271,19 @@ test("detail card: adds sources, readiness breakdown and the device sleep score;
   const card = mod.slice(mod.indexOf("export function WellnessCard"), mod.indexOf("/** APEX Readiness Estimate"));
   assert.ok(!/td-metrics3|<Metric /.test(card), "the HRV / resting HR / sleep value grid is gone from the detail card");
   assert.ok(!/hrvVsBaseline|rhrVsBaseline|WHOOP Recovery|whoop/.test(card), "baseline comparisons and WHOOP recovery live in Key metrics only");
-  assert.match(card, /Where today&apos;s numbers come from/); assert.match(card, /SOURCE_TEXT\[r!\.source\]/); assert.match(card, /when\(r!, today\)/);
+  assert.match(card, /Where today&apos;s numbers come from/); assert.match(card, /sourceText\(r!\.source\)/); assert.match(card, /when\(r!, today\)/);
   assert.match(card, /No sleep goal is set, so sleep is left out of the readiness estimate/);
-  assert.match(card, /w\.sleepScore &&/); assert.match(card, /<ReadinessBlock est=\{w\.estimate\} detail guidanceAbove=\{guidanceAbove\} \/>/);
+  assert.match(card, /w\.sleepScore &&/); assert.match(card, /<ReadinessBlock est=\{w\.estimate\} guidanceAbove=\{guidanceAbove\} \/>/);
   // the readiness breakdown keeps everything useful
-  for (const keep of ["c.effectiveWeight * 100", "How it is calculated", "est.disclaimer", "Insufficient data", "Not used:", "Provisional: too little data", "conf-${est.confidence}"]) assert.ok(mod.includes(keep), `${keep} kept`);
-  assert.match(mod, /\{!detail && <div className="td-readyscore"/, "the score circle is not repeated in the detail view");
+  for (const keep of ["c.effectiveWeight * 100", "Calculation details: inputs, weights and method", "Only today&apos;s measurements are used", "est.disclaimer", "Insufficient data", "Not used:", "Provisional: too little data"]) assert.ok(mod.includes(keep), `${keep} kept`);
+  assert.equal((mod.match(/td-readyscore/g) ?? []).length, 1, "the score circle exists only in the insufficient layout; it is not repeated in the breakdown");
+  assert.doesNotMatch(mod.slice(mod.indexOf("export function ReadinessBlock"), mod.indexOf("// ------------------------------------------------------------------ 2 Endurance")), /\bdetail\b/, "no detail/non-detail switch is left in ReadinessBlock");
   assert.match(mod, /Today&apos;s guidance is in the Next step above\. You decide\./);
   assert.match(mod, /est\.guidance \? <p className="small"[^>]*>\{est\.guidance\} You decide\./, "when the Next step card is not showing it, the guidance is still shown here");
   // the headline sleep card says only that no goal is set; the link and the explanation live in the detail card
   const noGoal = wellnessSummary(rows(20, () => ({ hrv_ms: 60, rhr_bpm: 50, sleep_minutes: 420 })), TODAY, null);
   assert.equal(metricSpecs(input({ w: noGoal, sleepGoalH: null }), ["sleep"])[0].context, "No sleep goal set");
-  assert.match(css, /\.td-sources li\{display:flex;justify-content:space-between/); assert.match(css, /\.ds-missing\{grid-column:1\/-1\}/);
+  assert.match(css, /\.td-sources li\{display:flex;justify-content:space-between/); assert.match(css, /\.ds-setup\{margin-top:var\(--sp-3\)/);
 });
 
 // ------------------------------------------------------------------ HRV specificity

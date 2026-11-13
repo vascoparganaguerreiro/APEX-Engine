@@ -59,7 +59,7 @@ test("More menu behaviour: toggle, Escape, scrim click, route change and desktop
   assert.match(bar, /\(min-width: 801px\)/);
   assert.match(bar, /querySelector<HTMLElement>\("a,button"\)\?\.focus\(\)/); assert.match(bar, /btn\?\.focus\(\)/);
   assert.match(bar, /document\.body\.style\.overflow = "hidden"/); assert.match(bar, /document\.body\.style\.overflow = prev/, "page scroll lock is always released");
-  assert.match(bar, /MORE_NAV\.map/); assert.match(bar, /role="dialog" aria-label="More destinations"/);
+  assert.match(bar, /MORE_GROUPS\.map/); assert.match(bar, /role="dialog" aria-label="More destinations"/);
   assert.match(bar, /onClick=\{onSignOut\}/);
   assert.doesNotMatch(bar, /supabase|from\("|auth\./, "presentation only: no queries or auth logic in the bar");
 });
@@ -79,7 +79,7 @@ test("keyboard: the bar hides while a text field has focus, never for buttons, c
 const mobileBlock = (() => { const i = css.indexOf("/* mobile bottom navigation"); return i < 0 ? "" : css.slice(i); })();
 
 test("CSS: the bar exists only on mobile; the desktop sidebar is hidden only inside the mobile query", () => {
-  assert.match(mobileBlock, /^\/\* mobile bottom navigation[^\n]*\r?\n\.bnav,\.bnav-scrim,\.bnav-panel\{display:none\}\r?\n@media \(max-width:800px\)\{/, "hidden by default, shown only at <= 800px (the existing breakpoint)");
+  assert.match(mobileBlock, /^\/\* mobile bottom navigation[^\n]*\r?\n\.bnav,\.bnav-scrim,\.bnav-panel\{display:none\}\r?\n@media \(max-width:800px\),\(orientation:landscape\) and \(pointer:coarse\) and \(max-height:500px\) and \(max-width:1000px\)\{/, "hidden by default, shown only at <= 800px (the existing breakpoint)");
   const outside = css.slice(0, css.indexOf("/* mobile bottom navigation"));
   assert.doesNotMatch(outside, /\.bnav/); assert.doesNotMatch(outside, /\.side\{display:none\}/);
   assert.match(mobileBlock, /\.side\{display:none\}/);
@@ -100,7 +100,7 @@ test("CSS: safe areas, content clearance, floating elements, focus, reduced moti
 });
 
 test("accessibility: labelled nav landmark, icons hidden from assistive tech, labels are real text", () => {
-  assert.match(bar, /<nav className=\{`bnav[^`]*`\} aria-label="Primary">/);
+  assert.match(bar, /<nav className=\{`bnav[^`]*`\} aria-label="Primary"( inert=\{open \|\| undefined\})?>/);   // inert only while the More sheet is open
   assert.equal((bar.match(/aria-hidden="true" focusable="false"/g) ?? []).length >= 2, true);
   assert.doesNotMatch(bar, /\bimport .* from "(lucide|react-icons|@heroicons|framer-motion)/, "no new UI library");
 });
