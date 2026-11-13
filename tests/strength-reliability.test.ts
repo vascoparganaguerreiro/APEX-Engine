@@ -12,8 +12,9 @@ import {
 import { e1rm, exerciseStats, fromWorkout, personalRecords, workSets, type HSession } from "../lib/strength/analytics.ts";
 import { setVolumeKg } from "../lib/strength/units.ts";
 import { NotSetUp, loadHistory, loadWorkouts, type Db } from "../lib/strength/data.ts";
-import { FakeStrengthServer, T0, at, clock, ex, transportFor, uid } from "./strength-fixtures.ts";
+import { FakeStrengthServer, T0, at, clock, ex, transportFor, uid, testOwner } from "./strength-fixtures.ts";
 
+const USER = "11111111-1111-4111-8111-111111111111";
 const bench = () => {
   let w = startWorkout({ id: uid(), now: T0, newId: uid, defaultUnit: "kg" });
   w = addExercise(w, ex("barbell_bench_press"), { id: uid(), unit: "kg", setId: uid() });
@@ -38,7 +39,7 @@ test("status text: device only, waiting, confirmed by the server and failed are 
 });
 
 test("migration 13 missing: stays on the device, says so, never claims a server save, and uploads once the migration exists", async () => {
-  const server = new FakeStrengthServer(), t = transportFor(server), engine = new SyncEngine(new MemoryStore(), t, clock());
+  const server = new FakeStrengthServer(), t = transportFor(server), engine = new SyncEngine(new MemoryStore(), t, clock(), testOwner());
   await engine.load();
   assert.equal(syncLabel(engine.status), "Nothing waiting to upload", "fresh start: not 'Saved'");
   await engine.record(bench(), { active: true });
@@ -55,7 +56,7 @@ test("migration 13 missing: stays on the device, says so, never claims a server 
 });
 
 test("offline then back online: kept on the device, uploaded once, no duplicate", async () => {
-  const server = new FakeStrengthServer(), t = transportFor(server), store = new MemoryStore(), engine = new SyncEngine(store, t, clock());
+  const server = new FakeStrengthServer(), t = transportFor(server), store = new MemoryStore(), engine = new SyncEngine(store, t, clock(), testOwner());
   await engine.load();
   let w = bench(); const e = w.exercises[0];
   w = completeSet(w, e.id, e.sets[0].id, at(2));
@@ -76,7 +77,7 @@ function flaky(server: FakeStrengthServer) {
 }
 
 test("rejected changes are reported as FAILED (not 'saved'), stay on the device, and can be retried", async () => {
-  const server = new FakeStrengthServer(), t = flaky(server), engine = new SyncEngine(new MemoryStore(), t, clock());
+  const server = new FakeStrengthServer(), t = flaky(server), engine = new SyncEngine(new MemoryStore(), t, clock(), testOwner());
   await engine.load();
   await engine.record(bench(), { active: true });
   for (let i = 0; i < 6; i++) await engine.flush();
@@ -98,7 +99,7 @@ test("rejected changes are reported as FAILED (not 'saved'), stay on the device,
 });
 
 test("a failure mixed with pending work shows both, and new edits keep syncing", async () => {
-  const server = new FakeStrengthServer(), t = flaky(server), engine = new SyncEngine(new MemoryStore(), t, clock());
+  const server = new FakeStrengthServer(), t = flaky(server), engine = new SyncEngine(new MemoryStore(), t, clock(), testOwner());
   await engine.load();
   await engine.record(bench(), { active: true });
   for (let i = 0; i < 6; i++) await engine.flush();
@@ -128,15 +129,15 @@ const lsStub = () => { const m = new Map<string, string>(); return { getItem: (k
 
 test("device storage: localStorage is used when IndexedDB is unavailable, and an active workout survives a 'refresh'", async () => {
   await withGlobals({ indexedDB: undefined, localStorage: lsStub() }, async () => {
-    const { store, kind } = await pickStore();
+    const { store, kind } = await pickStore(USER);
     assert.equal(kind, "localstorage"); assert.ok(store instanceof LocalStorageStore);
     const t = transportFor(new FakeStrengthServer()); t.mode = "not_set_up";
-    const a = new SyncEngine(store, t, clock()); await a.load();
+    const a = new SyncEngine(store, t, clock(), testOwner()); await a.load();
     let w = bench(); const e = w.exercises[0];
     w = completeSet(w, e.id, e.sets[0].id, at(2)); w = pause(w, at(3));
     await a.record(w, { active: true });
     // refresh: a brand-new engine on the same storage
-    const b = new SyncEngine((await pickStore()).store, t, clock()); const local = await b.load();
+    const b = new SyncEngine((await pickStore(USER)).store, t, clock(), testOwner()); const local = await b.load();
     assert.equal(local.activeId, w.id);
     assert.equal(local.workouts[w.id].pausedAt, at(3), "still paused");
     assert.equal(local.workouts[w.id].exercises[0].sets[0].completed, true);
@@ -146,7 +147,7 @@ test("device storage: localStorage is used when IndexedDB is unavailable, and an
 
 test("device storage: memory is the last resort, and the pill says so", async () => {
   const broken = { getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); }, removeItem() { throw new Error("denied"); } };
-  await withGlobals({ indexedDB: undefined, localStorage: broken }, async () => { assert.equal((await pickStore()).kind, "memory"); });
+  await withGlobals({ indexedDB: undefined, localStorage: broken }, async () => { assert.equal((await pickStore(USER)).kind, "memory"); });
   assert.match(readFileSync(new URL("../components/strength/Bits.tsx", import.meta.url), "utf8"), /no durable storage: keep the tab open/);
 });
 

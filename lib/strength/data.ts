@@ -4,7 +4,7 @@ import { workingExercises, workingSetCount, type HSession } from "./analytics.ts
 import { strengthExcludedIds, type ActivitySource, type Decision, type Link, type StrengthSource } from "./dedup.ts";
 import { exerciseFromCustom, type CustomExerciseRow } from "./library.ts";
 import { routineFromRow, routinePayload, type Routine } from "./routines.ts";
-import { TransportError, type Op, type OpResult, type Transport } from "./sync.ts";
+import { TransportError, type Op, type OpResult, type SendAuth, type Transport } from "./sync.ts";
 import { NOT_SET_UP_MESSAGE, SafeError, friendlyError } from "../userError.ts";
 import type { Exercise, LoadMode, SetType, WeightUnit } from "./types.ts";
 import type { WExercise, WSet, Workout } from "./workout.ts";
@@ -27,13 +27,31 @@ const fail = (e: PgError | null | undefined): never => {
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
 // ------------------------------------------------------------------ sync transport (apply_strength_ops)
+/** The `sub` (user id) claim of a JWT. Used only to confirm that the token names the user that was verified. */
+export function jwtSubject(token: string): string | null {
+  try {
+    const p = token.split(".")[1]; if (!p) return null;
+    const json = JSON.parse(atob(p.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(p.length / 4) * 4, "="))) as { sub?: unknown };
+    return typeof json.sub === "string" ? json.sub.toLowerCase() : null;
+  } catch { return null; }
+}
 export function supabaseTransport(db: Db, isOnline: () => boolean = () => true): Transport {
   return {
-    async send(ops: Op[]): Promise<OpResult[]> {
+    async send(ops: Op[], auth?: SendAuth): Promise<OpResult[]> {
       if (!isOnline()) throw new TransportError("offline", "offline");
       let res: { data: unknown; error: PgError | null };
-      try { res = await db.rpc("apply_strength_ops", { p_ops: ops }); }
-      catch (e) { throw new TransportError("offline", e instanceof Error ? e.message : "network error"); }
+      try {
+        let q = db.rpc("apply_strength_ops", { p_ops: ops });
+        if (auth) {
+          // Bind the request to the session that was verified. supabase-js only fills in Authorization when the request has none, so
+          // setting it here means the verified token is used, not whichever session is current when the request is made. If the token
+          // names another user, or the builder cannot carry a header, nothing is sent.
+          if (jwtSubject(auth.accessToken) !== auth.userId.toLowerCase() || typeof q?.setHeader !== "function") throw new TransportError("auth", "session mismatch");
+          q = q.setHeader("Authorization", `Bearer ${auth.accessToken}`);
+        }
+        res = await q;
+      }
+      catch (e) { if (e instanceof TransportError) throw e; throw new TransportError("offline", e instanceof Error ? e.message : "network error"); }
       if (res.error) {
         if (isMissing(res.error)) throw new TransportError("not_set_up", "not set up");
         if (/jwt|auth|401/i.test(`${res.error.code} ${res.error.message}`)) throw new TransportError("auth", "signed out");

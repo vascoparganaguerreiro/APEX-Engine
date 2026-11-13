@@ -1,12 +1,13 @@
 // Durable device storage for the active workout and the sync queue: IndexedDB, with localStorage as a fallback (e.g. some private
 // browsing modes) and memory as a last resort. Browser only.
 import { MemoryStore, type LocalData, type LocalStore } from "./sync.ts";
+import { LOCAL_KEY, assertUserId, scopedDb, scopedKey } from "./scope.ts";
 
-const DB = "apex-strength", STORE = "state", KEY = "local", LS_KEY = "apex-strength-local-v1";
+const STORE = "state", KEY = "local";
 
-function openDb(): Promise<IDBDatabase> {
+function openDb(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1);
+    const req = indexedDB.open(name, 1);
     req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE); };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error("IndexedDB unavailable"));
@@ -16,7 +17,9 @@ function openDb(): Promise<IDBDatabase> {
 
 export class IdbStore implements LocalStore {
   private db: Promise<IDBDatabase> | null = null;
-  private conn() { this.db ??= openDb(); return this.db; }
+  private name: string;
+  constructor(userId: string) { this.name = scopedDb(userId); }
+  private conn() { this.db ??= openDb(this.name); return this.db; }
   async read(): Promise<LocalData | null> {
     const db = await this.conn();
     return new Promise((resolve, reject) => {
@@ -37,15 +40,18 @@ export class IdbStore implements LocalStore {
   }
 }
 export class LocalStorageStore implements LocalStore {
-  async read() { const s = localStorage.getItem(LS_KEY); return s ? (JSON.parse(s) as LocalData) : null; }
-  async write(d: LocalData) { localStorage.setItem(LS_KEY, JSON.stringify(d)); }
+  private key: string;
+  constructor(userId: string) { this.key = scopedKey(LOCAL_KEY, userId); }
+  async read() { const s = localStorage.getItem(this.key); return s ? (JSON.parse(s) as LocalData) : null; }
+  async write(d: LocalData) { localStorage.setItem(this.key, JSON.stringify(d)); }
 }
 
-/** The best available durable store. `kind` tells the UI whether data survives a browser restart. */
-export async function pickStore(): Promise<{ store: LocalStore; kind: "indexeddb" | "localstorage" | "memory" }> {
+/** The best available durable store for ONE user. `kind` tells the UI whether data survives a browser restart. Legacy unscoped data is never read. */
+export async function pickStore(userId: string): Promise<{ store: LocalStore; kind: "indexeddb" | "localstorage" | "memory" }> {
+  assertUserId(userId);
   if (typeof indexedDB !== "undefined") {
-    try { const s = new IdbStore(); await s.read(); return { store: s, kind: "indexeddb" }; } catch { /* fall through */ }
+    try { const s = new IdbStore(userId); await s.read(); return { store: s, kind: "indexeddb" }; } catch { /* fall through */ }
   }
-  try { localStorage.setItem("apex-probe", "1"); localStorage.removeItem("apex-probe"); return { store: new LocalStorageStore(), kind: "localstorage" }; } catch { /* fall through */ }
+  try { localStorage.setItem("apex-probe", "1"); localStorage.removeItem("apex-probe"); return { store: new LocalStorageStore(userId), kind: "localstorage" }; } catch { /* fall through */ }
   return { store: new MemoryStore(), kind: "memory" };
 }

@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/useAuth";
 import { getEngine, newId } from "@/lib/strength/runtime";
 import { useHistory, useLibrary, useRoutines, fmtClock, fmtMin, errText } from "@/lib/strength/hooks";
 import { TEMPLATES, fromTemplate, toPlan, type Routine } from "@/lib/strength/routines";
+import { GYM_KEY, readScoped, writeScoped } from "@/lib/strength/scope";
 import { snapshotOf } from "@/lib/strength/actions";
 import { durationSeconds, workingExercises, workingSetCount } from "@/lib/strength/analytics";
 import { EQUIPMENT, EQUIPMENT_LABEL, type Equipment } from "@/lib/strength/types";
@@ -19,7 +20,6 @@ import { EMPTY } from "@/lib/emptyStates";
 import { loadView } from "@/lib/emptyStates";
 import { SetupNotice, StrengthNav, SyncPill } from "@/components/strength/Bits";
 
-const GYM_KEY = "apex-gym-equipment-v1";
 
 export default function StrengthPage() {
   const { session } = useAuth();
@@ -49,8 +49,8 @@ export default function StrengthPage() {
       setUnsynced(engine.pendingWorkouts().filter((x) => x.status === "completed"));
       setReady(true);
     }).catch((e) => { setError(errText(e)); setReady(true); });
-    setRest(loadRest());
-    try { setEquipment(JSON.parse(localStorage.getItem(GYM_KEY) ?? "[]")); } catch { /* none */ }
+    setRest(loadRest(session.user.id));
+    setEquipment(readScoped<Equipment[]>(typeof localStorage === "undefined" ? null : localStorage, GYM_KEY, session.user.id, []));
   }, [session]);
   useEffect(() => { if (!w || w.status !== "active") return; const t = window.setInterval(() => setNow(new Date().toISOString()), 1000); return () => window.clearInterval(t); }, [w]);
 
@@ -84,13 +84,13 @@ export default function StrengthPage() {
     else if (r) start(r);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, rts.routines]);
-  const startRest = (seconds: number, label: string) => { const r = { endAt: Date.now() + seconds * 1000, pausedLeft: null, total: seconds, label }; saveRest(r); setRest(r); };
+  const startRest = (seconds: number, label: string) => { const r = { endAt: Date.now() + seconds * 1000, pausedLeft: null, total: seconds, label }; saveRest(session?.user.id, r); setRest(r); };
 
   async function doFinish(discardIncomplete: boolean) {
     if (!w) return;
     try {
       const done = finish(w, new Date().toISOString(), { discardIncomplete });
-      setW(null); setFinishing(false); saveRest(null); setRest(null);
+      setW(null); setFinishing(false); saveRest(session?.user.id, null); setRest(null);
       await engineRef.current?.record(done, { active: false });
       void engineRef.current?.flush();
       router.push(`/strength/history/${done.id}`);
@@ -100,9 +100,9 @@ export default function StrengthPage() {
     if (!w || !window.confirm("Cancel this workout? Everything logged in it will be deleted.")) return;
     await engineRef.current?.discard(w);
     void engineRef.current?.flush();
-    setW(null); saveRest(null); setRest(null);
+    setW(null); saveRest(session?.user.id, null); setRest(null);
   }
-  const toggleEq = (q: Equipment) => { const n = equipment.includes(q) ? equipment.filter((x) => x !== q) : [...equipment, q]; setEquipment(n); localStorage.setItem(GYM_KEY, JSON.stringify(n)); };
+  const toggleEq = (q: Equipment) => { const n = equipment.includes(q) ? equipment.filter((x) => x !== q) : [...equipment, q]; setEquipment(n); writeScoped(localStorage, GYM_KEY, session?.user.id, n); };
 
   if (!ready) return <><div className="eyebrow">Strength Hub</div><h1>Strength</h1><p className="muted">Loading…</p></>;
 
@@ -146,7 +146,7 @@ export default function StrengthPage() {
         <button className="btn fab" onClick={() => setAsk(true)} aria-label="Ask APEX">💬 Ask APEX</button>
         <AskApex open={ask} onClose={() => setAsk(false)} w={w} save={save} custom={lib.custom}
           snapshot={() => snapshotOf(w, { elapsedMin: elapsedSeconds(w, new Date().toISOString()) / 60, equipment, objective: "", currentId: currentExercise(w)?.id ?? null, routineName: rts.routines?.find((r) => r.id === w.routineId)?.name ?? null })} />
-        <RestTimer rest={rest} setRest={setRest} />
+        <RestTimer rest={rest} setRest={setRest} userId={session?.user.id ?? ""} />
       </>
     );
   }

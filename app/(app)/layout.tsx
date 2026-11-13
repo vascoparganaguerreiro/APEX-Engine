@@ -39,7 +39,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* scope "local": signs out THIS device only. The default ("global") would also sign out your phone and every other device. */}
         <button className="btn ghost" onClick={signOut}>Sign out</button>
       </aside>
-      <main className="main">{children}</main>
+      <main className="main" key={session.user.id}>{children}</main>
       <BottomNav email={session.user.email} onSignOut={signOut} />
       <OmniActionHost />
     </div>

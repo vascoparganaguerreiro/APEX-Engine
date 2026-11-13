@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { MemoryStore, SyncEngine, diffInto, emptySync, nextRev } from "../lib/strength/sync.ts";
 import { addExercise, addSet, completeSet, removeSet, startWorkout, updateSet, type Workout } from "../lib/strength/workout.ts";
-import { FakeStrengthServer, T0, at, clock, ex, transportFor, uid } from "./strength-fixtures.ts";
+import { FakeStrengthServer, T0, at, clock, ex, transportFor, uid, testOwner } from "./strength-fixtures.ts";
 
 function benchWorkout(): Workout {
   let w = startWorkout({ id: uid(), now: T0, newId: uid, defaultUnit: "kg" });
@@ -12,7 +12,7 @@ function benchWorkout(): Workout {
 }
 const setup = () => {
   const server = new FakeStrengthServer(), store = new MemoryStore(), t = transportFor(server);
-  return { server, store, t, engine: new SyncEngine(store, t, clock()) };
+  return { server, store, t, engine: new SyncEngine(store, t, clock(), testOwner()) };
 };
 
 test("rev numbers always increase, even if the clock goes backwards", () => {
@@ -39,7 +39,7 @@ test("diff: only changed rows are enqueued, and pending ops for the same row are
 test("completed sets are saved locally before any network use, and survive a reload", async () => {
   const { store, t, server } = setup();
   t.mode = "offline";
-  const e1 = new SyncEngine(store, t, clock());
+  const e1 = new SyncEngine(store, t, clock(), testOwner());
   await e1.load();
   let w = benchWorkout();
   const e = w.exercises[0];
@@ -50,7 +50,7 @@ test("completed sets are saved locally before any network use, and survive a rel
   assert.equal(st.mode, "offline");
   assert.match(st.message!, /Saved on this device/);
   // the tab is closed and reopened
-  const e2 = new SyncEngine(store, t, clock(Date.parse(T0) + 3_600_000));
+  const e2 = new SyncEngine(store, t, clock(Date.parse(T0) + 3_600_000), testOwner());
   const local = await e2.load();
   assert.equal(local.activeId, w.id);
   assert.equal(local.workouts[w.id].exercises[0].sets[0].completed, true);
@@ -90,7 +90,7 @@ test("concurrent flushes share one run; a second tab sending the same ops is har
   await a;
   assert.equal(server.calls, 1);
   // a second tab with a stale copy of the queue
-  const other = new SyncEngine(store, transportFor(server), clock());
+  const other = new SyncEngine(store, transportFor(server), clock(), testOwner());
   await other.load();
   assert.equal(other.status.pending, 0, "the store already reflects the acknowledged ops");
 });
@@ -118,7 +118,7 @@ test("deleting a set after it was synced is final, even if an older write arrive
 test("two devices editing the same set: the newer edit wins and the older is reported as stale", async () => {
   const server = new FakeStrengthServer();
   const store1 = new MemoryStore();
-  const d1 = new SyncEngine(store1, transportFor(server), clock(Date.parse(T0)));
+  const d1 = new SyncEngine(store1, transportFor(server), clock(Date.parse(T0)), testOwner());
   await d1.load();
   let w = benchWorkout();
   await d1.record(w, { active: true });
@@ -126,7 +126,7 @@ test("two devices editing the same set: the newer edit wins and the older is rep
   // device 2 starts from the same workout, later clock
   const store2 = new MemoryStore();
   store2.data = JSON.parse(JSON.stringify(store1.data));
-  const d2 = new SyncEngine(store2, transportFor(server), clock(Date.parse(T0) + 600_000));
+  const d2 = new SyncEngine(store2, transportFor(server), clock(Date.parse(T0) + 600_000), testOwner());
   await d2.load();
   const e = w.exercises[0];
   const w2 = updateSet(w, e.id, e.sets[0].id, { reps: 10 });
@@ -195,7 +195,7 @@ test("missing migration: everything stays queued on the device with a clear mess
 
 test("rejected ops are retried, then parked as failed without blocking other workouts", async () => {
   const server = new FakeStrengthServer();
-  const engine = new SyncEngine(new MemoryStore(), transportFor(server, "user-b"), clock());
+  const engine = new SyncEngine(new MemoryStore(), transportFor(server, "user-b"), clock(), testOwner());
   await engine.load();
   // someone else's session id (RLS): user-a owns it on the server
   const victim = benchWorkout();

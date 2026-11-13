@@ -11,7 +11,7 @@ import { MemoryStore, SyncEngine, adoptInto, diffInto, emptySync, hasPending } f
 import { addExercise, addSet, startWorkout, updateSet, type Workout } from "../lib/strength/workout.ts";
 import { fitSnapshot, snapshotOf, validateSnapshot } from "../lib/strength/actions.ts";
 import { FIT_ADAPTER, GARMIN_CONNECT_ADAPTER } from "../lib/strength/garmin/adapters.ts";
-import { FakeStrengthServer, T0, clock, ex, transportFor, uid } from "./strength-fixtures.ts";
+import { FakeStrengthServer, T0, clock, ex, transportFor, uid, testOwner } from "./strength-fixtures.ts";
 
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const read = (f: string) => readFileSync(join(root, f), "utf8");
@@ -91,7 +91,7 @@ test("device copies: the server copy wins unless local changes are still waiting
   const adopted = adoptInto(clean, remote);
   assert.match(adopted.known[`set:${w.exercises[0].sets[0].id}`].json, /"reps":10/, "bookkeeping now matches the server");
   const server = new FakeStrengthServer(), store = new MemoryStore();
-  const engine = new SyncEngine(store, transportFor(server), clock());
+  const engine = new SyncEngine(store, transportFor(server), clock(), testOwner());
   await engine.load();
   await engine.record(w, { active: false });
   assert.equal(engine.pendingWorkouts().length, 1);

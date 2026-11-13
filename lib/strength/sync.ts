@@ -7,10 +7,11 @@
 //    replayed or duplicated request (for example a response lost on a flaky network) is answered "stale" and never creates a second set.
 //  * Deletions are sent as tombstones, so a delayed older write can never bring a deleted set back.
 //  * One flush at a time per engine; ops sent concurrently from two tabs are still safe because the server is idempotent.
+import { assertUserId } from "./scope.ts";
 import { rowsOf, type RowKind, type Workout } from "./workout.ts";
 
 export interface Op { op_id: string; kind: RowKind; id: string; rev: number; deleted: boolean; data: Record<string, unknown> }
-export interface QueuedOp extends Op { sessionId: string; attempts: number; error: string | null; failed: boolean }
+export interface QueuedOp extends Op { /** The authenticated user that created this change. It is only ever uploaded under that same user. */ userId?: string; sessionId: string; attempts: number; error: string | null; failed: boolean }
 export interface OpResult { op_id: string; status: "applied" | "stale" | "rejected"; error?: string }
 export interface SyncState {
   queue: QueuedOp[];
@@ -23,16 +24,20 @@ export interface SyncState {
 }
 export const emptySync = (): SyncState => ({ queue: [], known: {}, lastRev: 0, sent: [], stale: 0 });
 
-export interface LocalData { version: 1; activeId: string | null; workouts: Record<string, Workout>; sync: SyncState }
+export interface LocalData { version: 1; /** The user this device data belongs to (set when the engine has an owner). */ ownerId?: string; activeId: string | null; workouts: Record<string, Workout>; sync: SyncState }
 export interface LocalStore { read(): Promise<LocalData | null>; write(d: LocalData): Promise<void> }
 export const emptyLocal = (): LocalData => ({ version: 1, activeId: null, workouts: {}, sync: emptySync() });
 
 export type TransportErrorKind = "offline" | "not_set_up" | "auth" | "server";
 export class TransportError extends Error { kind: TransportErrorKind; constructor(kind: TransportErrorKind, message: string) { super(message); this.kind = kind; } }
-export interface Transport { send(ops: Op[]): Promise<OpResult[]> }
+/** One authenticated session, read once: the user and the exact access token that the upload must be sent with. */
+export interface SendAuth { userId: string; accessToken: string }
+export interface Transport { send(ops: Op[], auth?: SendAuth): Promise<OpResult[]> }
 
 const KIND_RANK: Record<RowKind, number> = { session: 0, exercise: 1, set: 2 };
 const keyOf = (kind: RowKind, id: string) => `${kind}:${id}`;
+/** Who the engine works for: the owner of the device data, and a check of who is signed in right now. */
+export interface EngineOwner { userId: string; /** The live session (read once per call), or null when signed out. */ session(): Promise<SendAuth | null> }
 export const MAX_ATTEMPTS = 5;
 export const BATCH = 100;
 
@@ -143,11 +148,30 @@ export class SyncEngine {
   private store: LocalStore;
   private transport: Transport;
   private clock: { nowMs(): number; newId(): string };
-  constructor(store: LocalStore, transport: Transport, clock: { nowMs(): number; newId(): string }) { this.store = store; this.transport = transport; this.clock = clock; }
+  private owner: EngineOwner;
+  private disposed = false;
+  /** An owner is mandatory: an engine can never exist without a known user, and all of its data and uploads belong to that user. */
+  constructor(store: LocalStore, transport: Transport, clock: { nowMs(): number; newId(): string }, owner: EngineOwner) {
+    assertUserId(owner?.userId);
+    this.store = store; this.transport = transport; this.clock = clock; this.owner = { userId: owner.userId, session: owner.session };
+  }
+  get ownerId(): string { return this.owner.userId; }
+  get isDisposed(): boolean { return this.disposed; }
+  private live() { if (this.disposed) throw new Error("This Strength session ended because the signed-in user changed."); }
+
+  /** Stop all activity: nothing more is read, written or uploaded by this engine (used when the signed-in user changes). */
+  dispose(): void { this.disposed = true; this.listeners.clear(); }
+  /** New queued changes are stamped with the user that made them. */
+  private stamp(s: SyncState): SyncState {
+    const userId = this.owner.userId;
+    return { ...s, queue: s.queue.map((q) => (q.userId ? q : { ...q, userId })) };
+  }
 
   async load(): Promise<LocalData> {
     const d = await this.store.read();
-    if (d && d.version === 1) this.data = { ...emptyLocal(), ...d, sync: { ...emptySync(), ...d.sync } };
+    // Data that names a different owner is never loaded (defence in depth: stores are already per user).
+    if (d && d.version === 1 && !(d.ownerId && d.ownerId !== this.owner.userId)) this.data = { ...emptyLocal(), ...d, sync: { ...emptySync(), ...d.sync } };
+    this.data = { ...this.data, ownerId: this.owner.userId };
     this.refresh(this.st.mode === "syncing" ? "pending" : this.st.mode);
     return this.data;
   }
@@ -173,9 +197,10 @@ export class SyncEngine {
 
   /** Record a new state of a workout (live or a finished one being edited). Durable once the promise resolves. */
   async record(w: Workout, o: { active?: boolean } = {}): Promise<void> {
+    this.live();
     this.data = {
       ...this.data, workouts: { ...this.data.workouts, [w.id]: w }, activeId: o.active === false ? (this.data.activeId === w.id ? null : this.data.activeId) : o.active ? w.id : this.data.activeId,
-      sync: diffInto(this.data.sync, w, { nowMs: this.clock.nowMs(), newOpId: () => this.clock.newId(), inflight: this.inflight }),
+      sync: this.stamp(diffInto(this.data.sync, w, { nowMs: this.clock.nowMs(), newOpId: () => this.clock.newId(), inflight: this.inflight })),
     };
     this.refresh();
     await this.persist();
@@ -183,6 +208,7 @@ export class SyncEngine {
   /** Start editing a workout that came from the server (see adoptInto). */
   /** Returns the copy to edit: the device copy if it still has unsent changes, otherwise the server copy. */
   async adopt(w: Workout): Promise<Workout> {
+    this.live();
     const local = this.data.workouts[w.id];
     const keepLocal = Boolean(local) && hasPending(this.data.sync, w.id);
     const use = keepLocal ? local : w;
@@ -193,13 +219,15 @@ export class SyncEngine {
   /** Workouts on this device that still have changes waiting to upload. */
   pendingWorkouts(): Workout[] { return Object.values(this.data.workouts).filter((w) => w.id !== this.data.activeId && hasPending(this.data.sync, w.id)); }
   async discard(w: Workout): Promise<void> {
+    this.live();
     const workouts = { ...this.data.workouts }; delete workouts[w.id];
-    this.data = { ...this.data, workouts, activeId: this.data.activeId === w.id ? null : this.data.activeId, sync: discardInto(this.data.sync, w, { nowMs: this.clock.nowMs(), newOpId: () => this.clock.newId(), inflight: this.inflight }) };
+    this.data = { ...this.data, workouts, activeId: this.data.activeId === w.id ? null : this.data.activeId, sync: this.stamp(discardInto(this.data.sync, w, { nowMs: this.clock.nowMs(), newOpId: () => this.clock.newId(), inflight: this.inflight })) };
     this.refresh();
     await this.persist();
   }
   /** Forget local copies of finished workouts that are fully synced (the server copy is the source of truth for them). */
   async prune(keepIds: string[] = []): Promise<void> {
+    this.live();
     const pendingSessions = new Set(this.data.sync.queue.map((q) => q.sessionId));
     const workouts = Object.fromEntries(Object.entries(this.data.workouts).filter(([id, w]) => id === this.data.activeId || keepIds.includes(id) || w.status === "active" || pendingSessions.has(id)));
     const known = Object.fromEntries(Object.entries(this.data.sync.known).filter(([, v]) => workouts[v.sessionId]));
@@ -207,6 +235,7 @@ export class SyncEngine {
     await this.persist();
   }
   retryFailed(): Promise<SyncStatus> {
+    if (this.disposed) return Promise.resolve(this.st);
     this.data = { ...this.data, sync: { ...this.data.sync, queue: this.data.sync.queue.map((q) => (q.failed ? { ...q, failed: false, attempts: 0 } : q)) } };
     return this.persist().then(() => this.flush());
   }
@@ -219,14 +248,23 @@ export class SyncEngine {
   }
   private async runFlush(): Promise<SyncStatus> {
     await this.writing.catch(() => undefined);
+    if (this.disposed) return this.st;
     for (let round = 0; round < 20; round++) {
-      const batch = this.data.sync.queue.filter((q) => !q.failed && !this.inflight.has(q.op_id)).slice(0, BATCH);
+      // With an owner, only that user's own changes are sent, and only while that same user is signed in.
+      const batch = this.data.sync.queue.filter((q) => !q.failed && !this.inflight.has(q.op_id) && q.userId === this.owner.userId).slice(0, BATCH);
+      // The session is read ONCE here. The same object is handed to the transport, which sends with exactly this access token, so the
+      // identity verified now is the identity of the request (no second read of a session that may have changed in between).
+      let auth: SendAuth | null = null;
+      if (batch.length > 0) {
+        try { auth = await this.owner.session(); } catch { auth = null; }
+        if (this.disposed || !auth || auth.userId !== this.owner.userId || !auth.accessToken) { this.refresh("auth", "Saved on this device. Sign in as the same user to upload."); return this.st; }
+      }
       if (batch.length === 0) { this.refresh(undefined, this.data.sync.queue.some((q) => q.failed) ? "Some changes could not be uploaded. They are still saved on this device: use Retry." : null); return this.st; }
       batch.forEach((q) => this.inflight.add(q.op_id));
       this.refresh("syncing");
       let results: OpResult[];
       try {
-        results = await this.transport.send(batch.map(({ op_id, kind, id, rev, deleted, data }) => ({ op_id, kind, id, rev, deleted, data })));
+        results = await this.transport.send(batch.map(({ op_id, kind, id, rev, deleted, data }) => ({ op_id, kind, id, rev, deleted, data })), auth ?? undefined);
       } catch (e) {
         batch.forEach((q) => this.inflight.delete(q.op_id));
         const kind = e instanceof TransportError ? e.kind : "offline";

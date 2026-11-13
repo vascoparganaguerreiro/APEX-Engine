@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { fmtClock } from "@/lib/strength/hooks";
+import { REST_KEY, scopedKey } from "@/lib/strength/scope";
 
 export interface RestState { endAt: number | null; pausedLeft: number | null; total: number; label: string }
-const KEY = "apex-strength-rest";
-export const loadRest = (): RestState | null => { try { const r = JSON.parse(localStorage.getItem(KEY) ?? "null") as RestState | null; return r && (r.endAt || r.pausedLeft) ? r : null; } catch { return null; } };
-export const saveRest = (r: RestState | null) => { try { if (r) localStorage.setItem(KEY, JSON.stringify(r)); else localStorage.removeItem(KEY); } catch { /* optional */ } };
+/** The rest timer is stored per signed-in user; with no user id nothing is read or written. */
+export const loadRest = (userId: string | null | undefined): RestState | null => { try { if (!userId) return null; const r = JSON.parse(localStorage.getItem(scopedKey(REST_KEY, userId)) ?? "null") as RestState | null; return r && (r.endAt || r.pausedLeft) ? r : null; } catch { return null; } };
+export const saveRest = (userId: string | null | undefined, r: RestState | null) => { try { if (!userId) return; const k = scopedKey(REST_KEY, userId); if (r) localStorage.setItem(k, JSON.stringify(r)); else localStorage.removeItem(k); } catch { /* optional */ } };
 
 /** Completion alert: vibration, a short tone, and a system notification only if the user allowed notifications. */
 function alertDone(label: string) {
@@ -18,7 +19,7 @@ function alertDone(label: string) {
 }
 
 /** Sticky rest timer. Survives a page refresh (end time stored on the device); keeps counting past zero so you can see overrun. */
-export default function RestTimer({ rest, setRest }: { rest: RestState | null; setRest: (r: RestState | null) => void }) {
+export default function RestTimer({ rest, setRest, userId }: { rest: RestState | null; setRest: (r: RestState | null) => void; userId: string }) {
   const [now, setNow] = useState(() => Date.now());
   const fired = useRef<number | null>(null);
   const bar = useRef<HTMLDivElement>(null);
@@ -40,7 +41,7 @@ export default function RestTimer({ rest, setRest }: { rest: RestState | null; s
     if (rest?.endAt && left <= 0 && fired.current !== rest.endAt) { fired.current = rest.endAt; alertDone(rest.label); }
   }, [left, rest]);
   if (!rest) return null;
-  const update = (r: RestState | null) => { saveRest(r); setRest(r); };
+  const update = (r: RestState | null) => { saveRest(userId, r); setRest(r); };
   const add = (s: number) => update(rest.pausedLeft !== null ? { ...rest, pausedLeft: Math.max(0, rest.pausedLeft + s) } : { ...rest, endAt: (rest.endAt ?? Date.now()) + s * 1000 });
   return (
     <div ref={bar} className={left < 0 ? "restbar over" : "restbar"} role="timer" aria-label={`Rest timer for ${rest.label}`}>
