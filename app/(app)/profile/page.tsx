@@ -13,6 +13,7 @@ import {
 import GarminDeviceCard from "@/components/strength/GarminDeviceCard";
 import ChangePasswordCard from "@/components/ChangePasswordCard";
 import Disclosure from "@/components/ui/Disclosure";
+import ExperiencePicker from "@/components/profile/ExperiencePicker";
 import { countSet, setSummary } from "@/lib/disclosure";
 
 const errMsg = (e: unknown) => friendlyMessage(e, "Your profile could not be saved", { scope: "profile.page" });
@@ -120,8 +121,10 @@ export default function ProfilePage() {
       {locked && <div className="notice">The extra profile fields aren&apos;t set up on your account yet. Name, units, time zone, body measurements, max heart rate, FTP and sleep goal still work.</div>}
 
       <nav className="prof-jump" aria-label="Profile sections">
-        <a href="#profile-personal">Personal</a><a href="#profile-physiology">Physiology</a><a href="#profile-account">Account</a>
+        <a href="#profile-experience">Experience</a><a href="#profile-personal">Personal</a><a href="#profile-physiology">Physiology</a><a href="#profile-account">Account</a>
       </nav>
+
+      <ExperiencePicker goal={state?.profile.primary_goal ?? null} />
 
       <form id="profile-form" onSubmit={save}>
         <section id="profile-personal" className="card psec" aria-labelledby="profile-personal-h">

@@ -19,7 +19,9 @@ import { BiomarkersCard, EnduranceCard, RaceCard, StrengthCard, SupplementsCard,
 import FiveDay from "@/components/today/FiveDay";
 import KeyMetrics from "@/components/today/KeyMetrics";
 import NextActionCard from "@/components/today/NextActionCard";
-import { LENS_LABEL, LENS_SECTIONS, lensFromGoal, nextAction, type SectionKey } from "@/lib/today/lens";
+import { LENS_LABEL, LENS_SECTIONS, nextAction, type SectionKey } from "@/lib/today/lens";
+import { resolveExperience } from "@/lib/experience";
+import { useExperience } from "@/lib/useExperience";
 import { formatDisplayName } from "@/lib/today/format";
 import { setupModel, type LoadState } from "@/lib/today/setup";
 import { loadPlannedRange } from "@/lib/calendar/load";
@@ -96,7 +98,8 @@ export default function TodayPage() {
   }), [today, tz, races, acts, strength, active, sups, sup, planned]);
 
   const name = formatDisplayName(profile?.display_name);   // a clean first name, or none: the stored value is never shown raw
-  const { lens, basis } = lensFromGoal(primaryGoal);
+  const { choice: chosenExperience } = useExperience();
+  const { lens, basis } = resolveExperience(chosenExperience, primaryGoal);
   const allLines = w ? overview({ w, e, st, sup, race, today }) : [];
   const openQuick = (tab: QuickTab) => setQuick({ open: true, tab });
   const wellnessProblem = daily?.status === "unavailable" ? daily.reason : null;
@@ -151,7 +154,7 @@ export default function TodayPage() {
           <h1 className="td-hello">{greeting(hourIn(now, tz))}{name ? `, ${name}` : ""}.</h1>
           {lines.length > 0 ? <ul className="td-overview">{lines.map((l) => <li key={l}>{l}</li>)}</ul> : <p className="td-meta">{daily ? "" : "Loading your day…"}</p>}
           <p className="td-meta td-lens">
-            {primaryGoal === undefined ? "" : basis === "goal" ? <>{LENS_LABEL[lens]} view, based on your goal in <Link href="/profile">Profile</Link>.</> : <>{LENS_LABEL[lens]} view (default). <Link href="/profile">Set a goal in Profile</Link> to arrange Today for you.</>}
+            {primaryGoal === undefined ? "" : basis === "chosen" ? <>{LENS_LABEL[lens]} experience, chosen in <Link href="/profile#profile-experience">Profile</Link>. Every module is still below.</> : basis === "goal" ? <>{LENS_LABEL[lens]} view, based on your goal in <Link href="/profile">Profile</Link>.</> : <>{LENS_LABEL[lens]} view (default). <Link href="/profile#profile-experience">Choose an experience in Profile</Link> to arrange Today for you.</>}
           </p>
         </div>
       </header>

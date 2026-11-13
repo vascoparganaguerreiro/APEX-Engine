@@ -4,9 +4,8 @@
 // (the readiness estimate, personal baselines, training form and load), and every sentence about readiness is the engine's own
 // `guidance`. This file only decides WHICH of those existing values come first, and what the one "next step" is.
 //
-// There is no stored "Performance / Health & Wellness / Longevity" setting. The only thing the profile records is the person's primary goal
-// (lib/profile.ts GOALS). The view is derived from it with the fixed table below; no new setting or column is created. With no goal the
-// view is Performance (the layout Today already had) and the page says so.
+// Which view applies (lib/experience.ts resolveExperience): the experience the person chose (kept per account in this browser) first; with no choice, the
+// one derived from their primary goal (lib/profile.ts GOALS, fixed table below); with neither, Performance (the layout Today already had), and the page says so.
 import { freshnessBadge, type Tone } from "../ui.ts";
 import { relDay, shortDate, type EnduranceSummary, type Reading, type StrengthSummary, type SupplementSummary, type WellnessSummary } from "./model.ts";
 import { formFacts, sourceText } from "./format.ts";
@@ -38,7 +37,7 @@ export const LENS_METRICS: Record<Lens, MetricKey[]> = {
 export const LENS_SECTIONS: Record<Lens, SectionKey[]> = {
   performance: ["endurance", "strength", "race", "wellness", "supplements", "biomarkers"],
   wellness: ["wellness", "supplements", "strength", "endurance", "biomarkers", "race"],
-  longevity: ["wellness", "strength", "endurance", "biomarkers", "supplements", "race"],
+  longevity: ["biomarkers", "strength", "wellness", "endurance", "supplements", "race"],
 };
 
 // ------------------------------------------------------------------ metric cards
