@@ -254,5 +254,5 @@ test("wiring: the pill shows the label and a Retry for failed changes; nothing e
   assert.match(bits, /syncLabel\(status\)/); assert.match(bits, /status\.failed > 0 && <button[\s\S]*>Retry<\/button>/); assert.match(bits, /engine\.retryFailed\(\)/);
   assert.ok(!/SYNC_TEXT/.test(read("lib/strength/runtime.ts")), "the old 'Saved' wording is gone");
   assert.ok(!/text: `Saved: /.test(read("components/strength/AskApex.tsx")));
-  assert.match(read("app/(app)/strength/page.tsx"), /Cancel workout/);
+  assert.match(read("components/strength/WorkoutHeader.tsx"), /Cancel workout/);
 });

@@ -15,6 +15,7 @@ import type { SyncEngine } from "@/lib/strength/sync";
 import WorkoutEditor from "@/components/strength/WorkoutEditor";
 import RestTimer, { loadRest, saveRest, type RestState } from "@/components/strength/RestTimer";
 import AskApex from "@/components/strength/AskApex";
+import WorkoutHeader from "@/components/strength/WorkoutHeader";
 import EmptyState, { LoadProblem } from "@/components/ui/EmptyState";
 import { EMPTY } from "@/lib/emptyStates";
 import { loadView } from "@/lib/emptyStates";
@@ -52,6 +53,9 @@ export default function StrengthPage() {
     setRest(loadRest(session.user.id));
     setEquipment(readScoped<Equipment[]>(typeof localStorage === "undefined" ? null : localStorage, GYM_KEY, session.user.id, []));
   }, [session]);
+  // While a workout is active the page marks the document, so the global Quick actions button steps aside for the whole workout (app/globals.css: html.workout-live).
+  const workoutLive = w?.status === "active";
+  useEffect(() => { document.documentElement.classList.toggle("workout-live", workoutLive); return () => document.documentElement.classList.remove("workout-live"); }, [workoutLive]);
   useEffect(() => { if (!w || w.status !== "active") return; const t = window.setInterval(() => setNow(new Date().toISOString()), 1000); return () => window.clearInterval(t); }, [w]);
 
   /** Every change is written to the device first (IndexedDB), then uploaded shortly after. */
@@ -102,6 +106,9 @@ export default function StrengthPage() {
     void engineRef.current?.flush();
     setW(null); saveRest(session?.user.id, null); setRest(null);
   }
+  /** Minimise: leave the screen and keep the workout. Nothing is discarded or finished; it is already saved on this device (every change is), the rest timer keeps
+   *  its end time, and Today offers "Continue your workout". */
+  const minimise = () => { void engineRef.current?.flush(); router.push("/today"); };
   const toggleEq = (q: Equipment) => { const n = equipment.includes(q) ? equipment.filter((x) => x !== q) : [...equipment, q]; setEquipment(n); writeScoped(localStorage, GYM_KEY, session?.user.id, n); };
 
   if (!ready) return <><div className="eyebrow">Strength Hub</div><h1>Strength</h1><p className="muted">Loading…</p></>;
@@ -110,26 +117,11 @@ export default function StrengthPage() {
     const p = progress(w), cur = currentExercise(w), nxt = nextExercise(w), open = p.total - p.done;
     return (
       <>
-        <div className="wk-head">
-          <div className="wk-top">
-            <input className="wk-title" aria-label="Workout name" value={w.title} maxLength={120} onChange={(e) => save(setDetails(w, { title: e.target.value || "Workout" }))} />
-            <span className="wk-clock" aria-label="Workout duration">{fmtClock(elapsedSeconds(w, now))}</span>
-            <SyncPill />
-          </div>
-          <div className="wk-progress" aria-label={`${p.done} of ${p.total} sets done`}><i style={{ width: `${p.total ? (p.done / p.total) * 100 : 0}%` }} /></div>
-          <div className="wk-now">
-            <span>{p.done}/{p.total} sets</span>
-            {cur && <span>Now: <b>{cur.name}</b></span>}
-            {nxt && <span>Next: {nxt.name}</span>}
-            {w.pausedAt && <span style={{ color: "var(--amber)" }}>Paused</span>}
-          </div>
-          <div className="row">
-            {w.pausedAt ? <button className="btn ghost tiny" onClick={() => save(resume(w, new Date().toISOString()))}>▶ Resume</button> : <button className="btn ghost tiny" onClick={() => save(pause(w, new Date().toISOString()))}>❚❚ Pause</button>}
-            <button className="btn tiny" onClick={() => setFinishing(true)}>Finish</button>
-            <button className="btn ghost tiny" style={{ marginLeft: "auto" }} onClick={cancel}>Cancel workout</button>
-            {typeof Notification !== "undefined" && Notification.permission === "default" && <button className="linkbtn" onClick={() => void Notification.requestPermission()}>Enable rest alerts</button>}
-          </div>
-        </div>
+        <WorkoutHeader w={w} now={now} done={p.done} total={p.total} current={cur?.name ?? null} next={nxt?.name ?? null} sync={<SyncPill />}
+          alerts={typeof Notification !== "undefined" && Notification.permission === "default"}
+          onRename={(title) => save(setDetails(w, { title: title || "Workout" }))} onMinimise={minimise} onFinish={() => setFinishing(true)}
+          onPause={() => save(pause(w, new Date().toISOString()))} onResume={() => save(resume(w, new Date().toISOString()))} onAsk={() => setAsk(true)}
+          onEnableAlerts={() => void Notification.requestPermission()} onCancel={() => void cancel()} />
         {error && <div className="notice error" role="alert">{error} <button className="linkbtn" onClick={() => setError(null)}>Dismiss</button></div>}
         {lib.setUp === false && <SetupNotice what="Uploading workouts" />}
         {finishing && (
@@ -143,7 +135,6 @@ export default function StrengthPage() {
           </div>
         )}
         <WorkoutEditor w={w} save={save} all={lib.all} resolve={lib.resolve} history={hist.sessions ?? []} mode="live" onRest={startRest} />
-        <button className="btn fab" onClick={() => setAsk(true)} aria-label="Ask APEX">💬 Ask APEX</button>
         <AskApex open={ask} onClose={() => setAsk(false)} w={w} save={save} custom={lib.custom}
           snapshot={() => snapshotOf(w, { elapsedMin: elapsedSeconds(w, new Date().toISOString()) / 60, equipment, objective: "", currentId: currentExercise(w)?.id ?? null, routineName: rts.routines?.find((r) => r.id === w.routineId)?.name ?? null })} />
         <RestTimer rest={rest} setRest={setRest} userId={session?.user.id ?? ""} />

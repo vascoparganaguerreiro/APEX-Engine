@@ -53,3 +53,14 @@ export function formFacts(form: { ctl: number; atl: number; tsb: number; state: 
 // ------------------------------------------------------------------ where a reading came from
 /** Plain words for a stored source id. An absent or unknown id is "source not recorded", never the identifier itself. */
 export const sourceText = (source: string | null | undefined): string => (typeof source === "string" ? own(SOURCE_TEXT, source) ?? "source not recorded" : "source not recorded");
+
+// ------------------------------------------------------------------ readiness clarity (display only; no calculation is touched)
+export const READINESS_EXPLAINER = "Calculated by APEX from HRV, resting heart rate and sleep. It is different from Garmin Training Readiness.";
+const STATE_WORD: Record<"current" | "partial" | "stale" | "missing", string> = { current: "Current", partial: "Partly today", stale: "Older", missing: "No data" };
+/** "Inputs: Current. Last Intervals.icu sync: 13 Nov 2026, 08:15." The sync time is the stored last successful sync, or "not recorded". */
+export function readinessFreshnessLine(state: "current" | "partial" | "stale" | "missing", lastSyncAt: string | null): string {
+  const t = lastSyncAt ? new Date(lastSyncAt) : null;
+  const ok = !!t && !Number.isNaN(t.getTime());
+  const when = ok ? t!.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "not recorded";
+  return `Inputs: ${STATE_WORD[state]}. Last Intervals.icu sync: ${when}.`;
+}

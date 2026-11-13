@@ -24,16 +24,17 @@ export default function RestTimer({ rest, setRest, userId }: { rest: RestState |
   const fired = useRef<number | null>(null);
   const bar = useRef<HTMLDivElement>(null);
   const shown = rest !== null;
-  // On phones the bar sits above the bottom navigation and can wrap to two rows. Its real height is published as --rest-h so the floating
-  // buttons (quick actions, Ask APEX) and the page padding clear it instead of sitting under or over it.
+  // One compact row. Its real height is published as --rest-h (and `rest-on` marks the page) so the keypad above it, the floating buttons and the page padding
+  // all clear it instead of sitting under or over it: together they are one bottom dock (app/globals.css).
   useEffect(() => {
     const el = bar.current;
     if (!shown || !el || typeof ResizeObserver === "undefined") return;
     const set = () => document.documentElement.style.setProperty("--rest-h", `${el.offsetHeight}px`);
+    document.documentElement.classList.add("rest-on");
     set();
     const ro = new ResizeObserver(set);
     ro.observe(el);
-    return () => { ro.disconnect(); document.documentElement.style.removeProperty("--rest-h"); };
+    return () => { ro.disconnect(); document.documentElement.style.removeProperty("--rest-h"); document.documentElement.classList.remove("rest-on"); };
   }, [shown]);
   useEffect(() => { if (!rest || rest.pausedLeft !== null) return; const t = window.setInterval(() => setNow(Date.now()), 250); return () => window.clearInterval(t); }, [rest]);
   const left = rest ? (rest.pausedLeft !== null ? rest.pausedLeft : Math.round(((rest.endAt ?? 0) - now) / 1000)) : 0;
@@ -45,13 +46,17 @@ export default function RestTimer({ rest, setRest, userId }: { rest: RestState |
   const add = (s: number) => update(rest.pausedLeft !== null ? { ...rest, pausedLeft: Math.max(0, rest.pausedLeft + s) } : { ...rest, endAt: (rest.endAt ?? Date.now()) + s * 1000 });
   return (
     <div ref={bar} className={left < 0 ? "restbar over" : "restbar"} role="timer" aria-label={`Rest timer for ${rest.label}`}>
-      <span className="muted small">Rest · {rest.label}</span>
-      <b aria-live={left <= 5 ? "assertive" : "off"}>{left < 0 ? `+${fmtClock(-left)}` : fmtClock(left)}</b>
+      {/* a thin line along the top edge: how much of the rest is left (full amber once it is over) */}
+      <i className="rest-fill" aria-hidden="true" style={{ width: `${left < 0 ? 100 : rest.total > 0 ? Math.max(0, Math.min(100, (left / rest.total) * 100)) : 0}%` }} />
+      <div className="rest-clock">
+        <b aria-live={left <= 5 ? "assertive" : "off"}>{left < 0 ? `+${fmtClock(-left)}` : fmtClock(left)}</b>
+        <span className="rest-label">Rest · {rest.label}</span>
+      </div>
       <button className="iconbtn" onClick={() => add(-15)} aria-label="15 seconds less">−15</button>
-      <button className="iconbtn" onClick={() => add(15)} aria-label="15 seconds more">+15</button>
       {rest.pausedLeft === null
         ? <button className="iconbtn" onClick={() => update({ ...rest, pausedLeft: left, endAt: null })} aria-label="Pause rest">❚❚</button>
         : <button className="iconbtn" onClick={() => update({ ...rest, endAt: Date.now() + rest.pausedLeft! * 1000, pausedLeft: null })} aria-label="Resume rest">▶</button>}
+      <button className="iconbtn" onClick={() => add(15)} aria-label="15 seconds more">+15</button>
       <button className="iconbtn" onClick={() => update({ ...rest, endAt: Date.now() + rest.total * 1000, pausedLeft: null })} aria-label="Reset rest">↺</button>
       <button className="btn tiny" onClick={() => update(null)}>Skip</button>
     </div>

@@ -55,9 +55,8 @@ test("safe areas: the page frame keeps the side insets at every width, and every
   assert.match(top, /\n\.shell\{padding-left:env\(safe-area-inset-left\);padding-right:env\(safe-area-inset-right\)\}\n/);
   assert.ok(!/\.shell\{padding-left:env/.test(css.slice(css.indexOf("/* mobile bottom navigation"))), "not repeated inside the phone block");
   const rule = (start: string) => { const i = css.indexOf(start); assert.ok(i >= 0, start); return css.slice(i, css.indexOf("}", i)); };
-  assert.match(rule(".restbar{position:fixed;left:0;right:0;bottom:0;"), /padding-left:max\(16px,env\(safe-area-inset-left\)\);padding-right:max\(16px,env\(safe-area-inset-right\)\)$/);
-  assert.match(rule(".restbar{position:fixed;left:0;right:0;bottom:0;"), /calc\(10px \+ env\(safe-area-inset-bottom\)\)/, "bottom inset kept");
-  assert.match(rule(".fab{position:fixed;right:16px;"), /margin-right:env\(safe-area-inset-right\)$/);
+  assert.match(rule(".restbar{position:fixed;left:0;right:0;bottom:0;"), /padding:6px max\(10px,env\(safe-area-inset-right\)\) calc\(6px \+ env\(safe-area-inset-bottom\)\) max\(10px,env\(safe-area-inset-left\)\);display:flex;gap:4px;align-items:center$/, "the compact bar still keeps both side insets");
+  assert.match(rule(".restbar{position:fixed;left:0;right:0;bottom:0;"), /calc\(6px \+ env\(safe-area-inset-bottom\)\)/, "bottom inset kept");
   assert.match(rule("  .td-quickbtn{position:fixed;right:16px;"), /margin-right:env\(safe-area-inset-right\)$/);
   assert.match(rule("  .omni-fab{display:grid;place-items:center;position:fixed;right:16px;"), /;margin-right:env\(safe-area-inset-right\)$/);
   assert.match(rule("  .bnav{--cyan:#38d4d0;"), /padding:0 env\(safe-area-inset-right\) env\(safe-area-inset-bottom\) env\(safe-area-inset-left\)/, "the bar already had all three");
@@ -69,7 +68,7 @@ test("rest bar: beside the sidebar on desktop, full width on a landscape phone (
   const desk = css.indexOf("@media (min-width:801px){.restbar{left:240px}}"), phone = css.indexOf(`@media ${PHONE_CSS}{.restbar{left:0}}`);
   assert.ok(desk > 0 && phone > desk, "the phone override comes after the desktop rule, so it wins when both match (width above 800)");
   assert.equal(matches("(min-width:801px)", { w: 852, h: 393, coarse: true }) && matches(PHONE_CSS, { w: 852, h: 393, coarse: true }), true, "a landscape phone matches both, hence the override");
-  assert.match(css, /\.restbar\{bottom:var\(--bnav-h\);padding-bottom:10px\}/, "above the bottom bar in phone mode");
+  assert.match(css, /\.restbar\{bottom:var\(--bnav-h\);padding-bottom:6px\}/, "above the bottom bar in phone mode (the bar below it already covers the safe area)");
 });
 
 test("components follow the same definition: the bottom bar closes its menu only when the layout really becomes desktop; the omni button uses the phone layout", () => {

@@ -12,7 +12,7 @@ import {
   type ReadinessEstimate, type SupplementSummary, type WellnessSummary,
 } from "@/lib/today/model";
 import type { Race } from "@/lib/races";
-import { formFacts, sourceText, sportLabel } from "@/lib/today/format";
+import { formFacts, READINESS_EXPLAINER, readinessFreshnessLine, sourceText, sportLabel } from "@/lib/today/format";
 import type { Section } from "@/lib/today/load";
 
 type Accent = "green" | "blue" | "amber" | "violet" | "red" | "teal";
@@ -37,7 +37,7 @@ const when = (r: Reading, today: string) => (r.freshness === "today" ? "today" :
 /** The detail card adds what the headline metrics above do not show: where each number came from and when, the readiness breakdown, the device sleep score and what is
  *  missing from the estimate. It does not repeat the values or explanations. `quiet`: the Next step card is already asking for wellness (or saying it is unavailable).
  *  `guidanceAbove`: the Next step card already shows today's guidance. */
-export function WellnessCard({ s, w, today, goal, onLog, quiet = false, guidanceAbove = false }: { s: Section<unknown>; w: WellnessSummary | null; today: string; goal: number | null; onLog: () => void; quiet?: boolean; guidanceAbove?: boolean }) {
+export function WellnessCard({ s, w, today, goal, lastSyncAt = null, onLog, quiet = false, guidanceAbove = false }: { s: Section<unknown>; w: WellnessSummary | null; today: string; goal: number | null; lastSyncAt?: string | null; onLog: () => void; quiet?: boolean; guidanceAbove?: boolean }) {
   const status = !w ? null : w.state === "current" ? <Fresh f="today" /> : w.state === "partial" ? <span className="td-pill f-yesterday">Partly today</span> : w.state === "stale" ? <Fresh f="stale" /> : <Fresh f="missing" />;
   return (
     <Module title="Wellness" accent="green" href="/integrations" linkText="Data sources" status={<>{status}<button type="button" className="td-inline" onClick={onLog}>Log a day</button></>} className="td-span-4">
@@ -55,6 +55,11 @@ export function WellnessCard({ s, w, today, goal, onLog, quiet = false, guidance
               ))}
             </ul>
             {w.sleep && !goal && <p className="td-meta">No sleep goal is set, so sleep is left out of the readiness estimate. <Link href="/profile">Set one in Profile</Link>.</p>}
+          </div>
+          <div className="td-sources">
+            <b className="td-subhead">APEX Readiness Estimate{w.estimate.status === "ok" ? ` · ${w.estimate.score} / 100` : ""}</b>
+            <p className="td-meta">{READINESS_EXPLAINER}</p>
+            <p className="td-meta">{readinessFreshnessLine(w.state, lastSyncAt)}</p>
           </div>
           <ReadinessBlock est={w.estimate} guidanceAbove={guidanceAbove} />
           {w.sleepScore && (

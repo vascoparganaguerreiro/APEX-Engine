@@ -171,12 +171,29 @@ select{background:var(--card2);color:var(--text);border:1px solid var(--line);bo
 .sh-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 18px}
 .sh-tabs a{padding:7px 12px;border:1px solid var(--line);border-radius:999px;color:var(--text);text-decoration:none;font-size:13px}
 .sh-tabs a.on{border-color:var(--green);color:var(--green);background:#13202b}
-.wk-head{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,var(--bg) 80%,transparent);padding:10px 0 12px;display:flex;flex-direction:column;gap:8px}
-.wk-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.wk-title{font-size:20px;font-weight:800;flex:1;min-width:140px;background:transparent;border:0;color:var(--text);padding:4px 0}
-.wk-clock{font-variant-numeric:tabular-nums;font-size:22px;font-weight:800}
-.wk-progress{height:6px;background:var(--line);border-radius:6px;overflow:hidden}.wk-progress i{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--blue))}
-.wk-now{display:flex;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--muted)}.wk-now b{color:var(--text)}
+/* live workout header (components/strength/WorkoutHeader.tsx): Minimise, name, duration, Finish, menu; then one context line and a thin progress line */
+.wk-head{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,var(--bg) 85%,transparent);padding:6px 0 10px;display:flex;flex-direction:column;gap:2px}
+.wk-top{display:flex;align-items:center;gap:6px;min-width:0}
+.wk-title{font-size:17px;font-weight:800;flex:1 1 0;min-width:0;min-height:44px;background:transparent;border:0;color:var(--text);padding:4px 2px;text-overflow:ellipsis}
+.wk-clock{font-variant-numeric:tabular-nums;font-size:18px;font-weight:800;white-space:nowrap}
+.wk-icon{flex:none;display:grid;place-items:center;min-width:44px;min-height:44px;padding:0;background:transparent;border:0;border-radius:12px;color:var(--text);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.wk-icon:active{background:var(--card2)}.wk-icon:focus-visible,.wk-item:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.wk-finish{flex:none;white-space:nowrap}
+.wk-menuwrap{position:relative;flex:none}
+.wk-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:25;min-width:220px;max-width:calc(100vw - 24px);padding:6px;display:flex;flex-direction:column;gap:2px;background:var(--card);border:1px solid var(--line);border-radius:14px}
+.wk-item{display:flex;align-items:center;gap:8px;width:100%;min-height:48px;padding:0 12px;background:transparent;border:0;border-radius:10px;color:var(--text);font:inherit;font-size:15px;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.wk-item:hover,.wk-item:active{background:var(--card2)}.wk-item.danger{color:var(--red)}
+.wk-ctx{display:flex;align-items:center;gap:8px;min-width:0;font-size:13px;color:var(--muted)}
+.wk-ctx-text{flex:1 1 0;min-width:0;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.3;overflow-wrap:anywhere}   /* up to two lines before anything is cut off */
+.wk-paused{flex:none;color:var(--amber);font-weight:700}
+/* the save status keeps its colour and shortens (with an ellipsis) before it can squeeze the exercise context; the full text is its tooltip */
+.wk-ctx>.syncwrap,.wk-ctx>.syncpill{flex:0 1 auto;min-width:0;max-width:44%}
+.wk-ctx .syncpill{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wk-ctx .syncretry{flex:none}
+.wk-progress{position:absolute;left:0;right:0;bottom:3px;height:3px;background:var(--line);border-radius:3px;overflow:hidden}.wk-progress i{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--blue))}
+/* a phone held sideways is short: the two rows share one line so the header takes as little height as possible */
+@media (orientation:landscape) and (max-height:500px){
+  .wk-head{flex-direction:row;align-items:center;gap:12px;padding:2px 0 8px}.wk-head .wk-top{flex:1 1 55%}.wk-head .wk-ctx{flex:1 1 45%}
+}
 .syncpill{font-size:11px;font-weight:700;letter-spacing:.04em;border-radius:999px;padding:4px 10px;border:1px solid var(--line);white-space:nowrap}
 .syncpill.synced{color:var(--green);border-color:#1d4a37}.syncpill.pending,.syncpill.syncing{color:var(--blue);border-color:#1d3a5a}.syncpill.offline,.syncpill.not_set_up,.syncpill.error,.syncpill.auth{color:var(--amber);border-color:#5a4520}
 .syncpill.failed{color:var(--red);border-color:#6a2a2a}
@@ -188,28 +205,79 @@ select{background:var(--card2);color:var(--text);border:1px solid var(--line);bo
 .exc-head{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}.exc-head h3{margin:0;font-size:17px;line-height:1.3}
 .exc-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px;font-size:12px;color:var(--muted)}
 .prev{font-size:12px;color:var(--muted);margin:0 0 8px}.prev button{font-size:12px}
-.setgrid{display:grid;grid-template-columns:44px 1fr 1fr 64px 52px;gap:6px;align-items:center}
-.setgrid.hdr{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
-.setrow{padding:4px 0;border-radius:10px}.setrow.done{background:rgba(46,230,166,.08)}
+/* compact set table: Set | Previous | KG | Reps | Done. One dense line per set; RPE, RIR, type, note and the rest open from the set number. */
+.setgrid{display:grid;grid-template-columns:44px minmax(52px,.8fr) minmax(0,1fr) minmax(0,1fr) 48px;gap:6px;align-items:center}
+.setgrid.hdr{padding-left:3px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.setrow{padding:4px 4px;margin:0 -4px;border-radius:10px;border-left:3px solid transparent}
+.setrow.done{background:rgba(46,230,166,.2);border-left-color:var(--green)}
+.setrow.warmup{border-left-color:var(--amber);background:rgba(240,180,41,.07)}.setrow.warmup.done{background:rgba(46,230,166,.2);border-left-color:var(--green)}
+.setprev{font-size:12px;color:var(--muted);text-align:center;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .setrow input{padding:10px 8px;font-size:17px;text-align:center;min-height:46px}
-.settype{min-height:46px;border:1px solid var(--line);border-radius:10px;background:var(--card2);color:var(--text);font:inherit;font-weight:800;cursor:pointer}
+.settype{position:relative;min-height:46px;border:1px solid var(--line);border-radius:10px;background:var(--card2);color:var(--text);font:inherit;font-weight:800;cursor:pointer}
+.settype::after{content:"";position:absolute;right:5px;bottom:5px;width:5px;height:5px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(45deg)}.settype[aria-expanded="true"]::after{transform:rotate(225deg)}
+.settype:focus-visible,.donebtn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .settype.warmup{color:var(--amber)}.settype.drop,.settype.failure{color:var(--red)}.settype.backoff{color:var(--blue)}
 .donebtn{min-height:46px;border-radius:12px;border:1px solid var(--line);background:var(--card2);color:var(--muted);font-size:20px;cursor:pointer}
-.donebtn.on{background:linear-gradient(135deg,var(--green),var(--blue));color:#031210;border:0}
+.donebtn.on{background:var(--green);color:#031210;border:0;font-weight:900}
 .rpesel{padding:8px 4px;font-size:14px;min-height:46px;text-align:center}
 .setextra{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:4px 0 8px 50px;font-size:12px;color:var(--muted)}
+.setextra.setdetails{padding:8px 4px 8px 4px;margin-top:4px;border-top:1px solid var(--line)}.setextra.setdetails .iconbtn.tiny{min-height:44px;min-width:44px}.setextra.setdetails .chip{min-height:44px}
+.setextra.setdetails .rpesel{min-height:44px}.setextra.setdetails select{min-height:44px}.settarget{flex-basis:100%}
 .setextra select,.setextra input{width:auto;padding:6px 8px;font-size:13px;min-height:36px}
 .tiny{padding:6px 10px;font-size:12px;border-radius:10px}
 .iconbtn{background:transparent;border:1px solid var(--line);color:var(--text);border-radius:10px;min-width:40px;min-height:40px;cursor:pointer;font:inherit}
-.restbar{position:fixed;left:0;right:0;bottom:0;z-index:40;background:#0b1622;border-top:1px solid #1d3a5a;padding:10px 16px calc(10px + env(safe-area-inset-bottom));display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
-.restbar b{font-size:28px;font-variant-numeric:tabular-nums;min-width:84px;text-align:center}.restbar.over b{color:var(--amber)}
+/* rest timer + keypad = ONE bottom dock. The rest bar is one compact row (clock and exercise on the left, then -15, pause, +15, reset, Skip). The keypad sits directly above it
+   (bottom:var(--rest-h)), the bottom bar steps aside while the keypad is open, and only the lowest piece of the dock pads for the safe area. */
+.restbar{position:fixed;left:0;right:0;bottom:0;z-index:40;overflow:hidden;background:#0b1622;border-top:1px solid #1d3a5a;padding:6px max(10px,env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));display:flex;gap:4px;align-items:center}
+.rest-fill{position:absolute;left:0;top:0;height:3px;background:linear-gradient(90deg,var(--green),var(--blue));transition:width .25s linear}.restbar.over .rest-fill{background:var(--amber)}
+.rest-clock{flex:1 1 auto;min-width:64px;display:flex;flex-direction:column;justify-content:center;line-height:1.1}
+.restbar b{font-size:24px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}.restbar.over b{color:var(--amber)}
+.rest-label{max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted)}
+.restbar .iconbtn{flex:none;min-width:44px;min-height:44px;padding:0;font-size:15px}.restbar .btn.tiny{flex:none;min-height:44px;padding:0 14px}
+@media (prefers-reduced-motion:reduce){.rest-fill{transition:none}}
 .sheet-bg{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--card);border:1px solid var(--line);border-radius:18px 18px 0 0;width:100%;max-width:720px;max-height:88vh;overflow-y:auto;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
 .sheet h3{margin:0 0 10px}
 .pick{display:flex;flex-direction:column;gap:6px;max-height:52vh;overflow-y:auto}
 .pickrow{display:flex;justify-content:space-between;gap:10px;align-items:center;text-align:left;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card2);color:var(--text);font:inherit;cursor:pointer}
 .pickrow:hover{border-color:var(--green)}
-.fab{position:fixed;right:16px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:45;border-radius:999px;padding:14px 18px;box-shadow:0 8px 24px rgba(0,0,0,.45);margin-right:env(safe-area-inset-right)}
+/* APEX numeric keypad for the live workout on a phone (components/strength/NumKeypad.tsx). Fixed above the rest timer, never taking focus from the field. */
+.setrow{scroll-margin-bottom:calc(var(--kp-h,0px) + var(--rest-h,0px) + var(--bnav-h,0px) + 16px)}
+.numcell{display:block;width:100%;min-width:0;min-height:46px;padding:10px 2px;border:1px solid var(--line);border-radius:10px;background:var(--card2);color:var(--text);font:inherit;font-size:17px;font-variant-numeric:tabular-nums;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;scroll-margin-bottom:calc(var(--kp-h,0px) + var(--rest-h,0px) + 16px)}
+.numcell.active{border-color:var(--focus);box-shadow:0 0 0 1px var(--focus)}.numcell.fresh{background:rgba(56,212,208,.18)}.numcell:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.numcell-ph{color:var(--muted)}
+.kp-pref{margin:0 0 8px}
+.kp{position:fixed;left:0;right:0;bottom:var(--rest-h,0px);z-index:42;background:#0b1622;border-top:1px solid #1d3a5a;box-shadow:0 -8px 24px rgba(0,0,0,.4);padding:0 max(10px,env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}
+.kp-head{display:flex;align-items:center;gap:8px;min-height:44px}
+html.rest-on .kp{padding-bottom:8px;box-shadow:none}
+.kp-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted)}
+.kp-value{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;min-width:48px;text-align:right}
+.kp-link{min-height:44px;padding:0 6px;background:transparent;border:0;color:var(--green);font:inherit;font-size:12px;text-decoration:underline;cursor:pointer}
+.kp-x{min-width:44px;min-height:44px;background:transparent;border:0;color:var(--muted);font:inherit;font-size:18px;cursor:pointer}
+.kp-link:focus-visible,.kp-x:focus-visible,.kp-key:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.kp-keys{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:46px;gap:6px}
+.kp-key{border:1px solid var(--line);border-radius:12px;background:var(--card2);color:var(--text);font:inherit;font-size:20px;font-weight:650;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none}
+.kp-key:active{background:#1a2a3a}.kp-key:disabled{opacity:.3;cursor:default}
+.kp-fn{color:var(--muted)}
+.kp-next{grid-column:4;grid-row:3 / span 2;background:var(--green);color:#031210;border:0;font-size:16px;font-weight:800}.kp-next:active{background:#27c791}
+.kp-zero{grid-column:2 / span 2}
+@media (prefers-reduced-motion:reduce){.numcell,.kp-key{transition:none}}
+/* a phone held sideways is short: the keys sit in two rows of seven (1-6 and delete, 7-0 and the point, clear and Next), so the keypad is about 140px tall */
+@media (orientation:landscape) and (max-height:500px){
+  .kp-head{min-height:36px}.kp-keys{grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:44px}
+  .kp-next{grid-column:auto;grid-row:auto}.kp-zero{grid-column:auto}
+  .kp-key[data-k="1"]{order:1}.kp-key[data-k="2"]{order:2}.kp-key[data-k="3"]{order:3}.kp-key[data-k="4"]{order:4}.kp-key[data-k="5"]{order:5}.kp-key[data-k="6"]{order:6}.kp-key[data-k="backspace"]{order:7}
+  .kp-key[data-k="7"]{order:8}.kp-key[data-k="8"]{order:9}.kp-key[data-k="9"]{order:10}.kp-key[data-k="0"]{order:11}.kp-key[data-k="."]{order:12}.kp-key[data-k="clear"]{order:13}.kp-key[data-k="next"]{order:14}
+}
+/* reordering exercises in the live workout (components/strength/useExerciseDrag.ts): press and hold a header, or the grip with the keyboard */
+.exc-head>div{flex:1;min-width:0}
+.exc-head.sortable{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.exc-grip{flex:none;display:grid;place-items:center;min-width:44px;min-height:44px;margin:-6px 0 -6px -10px;padding:0;background:transparent;border:0;border-radius:10px;color:var(--muted);cursor:grab;-webkit-tap-highlight-color:transparent}
+.exc-grip:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.exc-grip[aria-pressed="true"]{color:var(--green);background:var(--card2)}
+.exc.dragging{opacity:.35}
+.exc-drop{position:relative;height:0}.exc-drop::before{content:"";position:absolute;left:0;right:0;top:-9px;height:4px;border-radius:4px;background:var(--green)}
+.exc-ghost{position:fixed;z-index:44;pointer-events:none;box-sizing:border-box;padding:14px 16px;border:1px solid var(--green);border-radius:var(--r-lg,14px);background:var(--card);box-shadow:0 12px 32px rgba(0,0,0,.5);opacity:.97;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html.exc-dragging{-webkit-user-select:none;user-select:none;cursor:grabbing}
 .proposal{border:1px solid #1d3a5a;background:#0d1a28;border-radius:12px;padding:10px 12px;margin:8px 0}
 .proposal.warn{border-color:#5a4520;background:#1f1a0f}
 .mic{min-width:52px;min-height:52px;border-radius:999px;font-size:20px}.mic.live{background:var(--red);color:#fff;border:0}
@@ -287,7 +355,7 @@ select{background:var(--card2);color:var(--text);border:1px solid var(--line);bo
   .td-bento{grid-template-columns:1fr}.td-span-4,.td-span-3,.td-span-2{grid-column:auto}
   .td-quickbtn{position:fixed;right:16px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:30;box-shadow:0 8px 24px rgba(0,0,0,.5);border-radius:999px;margin-right:env(safe-area-inset-right)}
 }
-@media (max-width:760px){.cmp{grid-template-columns:1fr}.setgrid{grid-template-columns:40px 1fr 1fr 58px 50px}.main{padding-bottom:120px}}
+@media (max-width:760px){.cmp{grid-template-columns:1fr}.setgrid{grid-template-columns:44px minmax(48px,.8fr) minmax(0,1fr) minmax(0,1fr) 48px}.main{padding-bottom:120px}}
 
 /* Login: "Remember me" */
 .remember{flex-direction:row;align-items:flex-start;gap:12px;min-height:44px;padding:6px 0;margin:0 0 14px;color:var(--text);font-size:15px;cursor:pointer}
@@ -334,7 +402,7 @@ select{background:var(--card2);color:var(--text);border:1px solid var(--line);bo
 @media (max-width:520px){.syncpill{white-space:normal}}
 @media (max-width:400px){
   .main{padding:16px 12px 120px}.exc{padding:12px}.td-card{padding:14px}
-  .setgrid{grid-template-columns:36px 1fr 1fr 52px 46px;gap:4px}.setrow input{padding:10px 4px}.rpesel{padding:8px 0}
+  .setgrid{grid-template-columns:44px minmax(44px,.8fr) minmax(0,1fr) minmax(0,1fr) 44px;gap:4px}.setrow input{padding:10px 2px}.rpesel{padding:8px 0}.setprev{font-size:11px}
 }/* training calendar */
 .cal-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0}
 .cal-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.cal-title{margin-left:6px}
@@ -373,11 +441,15 @@ select{background:var(--card2);color:var(--text);border:1px solid var(--line);bo
   .side{display:none}
   .main{padding-bottom:calc(var(--bnav-h) + 96px + var(--rest-h,0px))}
   /* floating elements sit above the bar instead of under it */
-  .restbar{bottom:var(--bnav-h);padding-bottom:10px}
-  .fab{bottom:calc(var(--bnav-h) + 84px + var(--rest-h,0px))}   /* above the global quick-actions button */
+  .restbar{bottom:var(--bnav-h);padding-bottom:6px}
   .td-quickbtn{bottom:calc(var(--bnav-h) + 18px)}
   .bnav{--cyan:#38d4d0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));position:fixed;left:0;right:0;bottom:0;z-index:35;height:var(--bnav-h);
     padding:0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);background:var(--card2);border-top:1px solid var(--line);transition:transform .2s ease,visibility .2s}
+  /* the APEX keypad is open (live workout): it owns the bottom. The bar and the floating buttons step aside; the page keeps room for the keypad and the rest timer */
+  :root.kp-open{--bnav-h:0px}
+  html.kp-open .bnav{transform:translateY(100%);visibility:hidden}
+  html.kp-open .restbar{padding-bottom:calc(6px + env(safe-area-inset-bottom));border-top-color:#16283a}
+  html.kp-open .main{padding-bottom:calc(var(--kp-h,0px) + var(--rest-h,0px) + 24px)}
   .bnav.typing{transform:translateY(100%);visibility:hidden}   /* a text field has focus: the on-screen keyboard owns the bottom of the screen */
   .bnav-item{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0;min-height:56px;padding:6px 2px;
     color:var(--muted);text-decoration:none;font:inherit;font-size:12px;font-weight:600;line-height:1.2;background:transparent;border:0;border-radius:0;cursor:pointer;
@@ -448,6 +520,8 @@ select{background:var(--card2);color:var(--text);border:1px solid var(--line);bo
   /* a text field has focus: release the bar space and hide floating buttons so nothing sits on or above the keyboard */
   :root.kb-open{--bnav-h:0px}
   html.kb-open .omni-fab{display:none}
+  /* an active Strength workout owns the whole screen: no floating Quick actions button (Ask APEX is in the workout menu). The Strength page sets the class from its own workout state. */
+  html.workout-live .omni-fab{display:none}
   .coachpage h1{font-size:26px;margin:2px 0 4px}
   .coachpage .eyebrow{font-size:10px}
   .coachpage>p.muted{font-size:13px}

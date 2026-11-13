@@ -162,7 +162,6 @@ test("CSS: the button exists only on phones, sits above the bar, hides with the 
   assert.ok(z(/\.omni-bg\{[^}]*z-index:(\d+)/) > z(/\.sheet-bg\{[^}]*z-index:(\d+)/), "above page sheets");
   assert.ok(z(/\.omni-bg\{[^}]*z-index:(\d+)/) > z(/\.bnav\{[^}]*z-index:(\d+)/), "above the bottom bar");
   assert.ok(z(/\.omni-fab\{display:grid;[^}]*z-index:(\d+)/) < z(/\.bnav-scrim\{[^}]*z-index:(\d+)/), "dimmed (not on top) while the More menu is open");
-  assert.match(css, /\.fab\{bottom:calc\(var\(--bnav-h\) \+ 84px \+ var\(--rest-h,0px\)\)\}/,"the Strength 'Ask APEX' button is lifted above the global one");
   assert.match(block, /@media \(prefers-reduced-motion:reduce\)\{\.omni-bg,\.omni-palette,\.omni-sheet\{animation:none\}/);
   assert.match(block, /\.omni-side:focus-visible,\.omni-row:focus-visible\{outline:2px solid #38d4d0/);
   assert.match(block, /\.omni-row\{[^}]*min-height:56px/);
@@ -178,15 +177,14 @@ test("rest bar: its real height is published, and the floating buttons and page 
   assert.ok(rest.indexOf('setProperty("--rest-h"') < rest.indexOf("if (!rest) return null"), "the hook runs before the early return (stable hook order)");
   const phone = css.slice(css.indexOf("/* mobile bottom navigation"));
   assert.match(phone, /\.main\{padding-bottom:calc\(var\(--bnav-h\) \+ 96px \+ var\(--rest-h,0px\)\)\}/);
-  assert.match(phone, /\.fab\{bottom:calc\(var\(--bnav-h\) \+ 84px \+ var\(--rest-h,0px\)\)\}/);
   assert.match(phone, /\.omni-fab\{display:grid;[^}]*bottom:calc\(var\(--bnav-h\) \+ 16px \+ var\(--composer-h,0px\) \+ var\(--rest-h,0px\)\);z-index:32/);
   assert.match(phone, /\.restbar\{bottom:var\(--bnav-h\)/, "the bar itself sits directly above the bottom navigation");
 });
 
-test("stacking order is deliberate: quick-actions button < rest bar < Ask APEX < page sheets < quick-actions dialog; the button hides with the keyboard on every page", () => {
+test("stacking order is deliberate: quick-actions button < rest bar < page sheets < quick-actions dialog; the button hides with the keyboard on every page", () => {
   const z = (re: RegExp) => Number(css.match(re)![1]);
-  const omniFab = z(/\.omni-fab\{display:grid;[^}]*z-index:(\d+)/), restbar = z(/\.restbar\{[^}]*z-index:(\d+)/), fab = z(/\.fab\{position:fixed;[^}]*z-index:(\d+)/), sheet = z(/\.sheet-bg\{[^}]*z-index:(\d+)/), omni = z(/\.omni-bg\{[^}]*z-index:(\d+)/);
-  assert.ok(omniFab < restbar && restbar < fab && fab < sheet && sheet < omni, `${omniFab} < ${restbar} < ${fab} < ${sheet} < ${omni}`);
+  const omniFab = z(/\.omni-fab\{display:grid;[^}]*z-index:(\d+)/), restbar = z(/\.restbar\{[^}]*z-index:(\d+)/), sheet = z(/\.sheet-bg\{[^}]*z-index:(\d+)/), omni = z(/\.omni-bg\{[^}]*z-index:(\d+)/);
+  assert.ok(omniFab < restbar && restbar < sheet && sheet < omni, `${omniFab} < ${restbar} < ${sheet} < ${omni}`);
   assert.equal((css.match(/(^|\n)\.omni-fab\{display:none\}/g) ?? []).length, 1, "hidden by default (desktop); shown only inside the phone media query");
   assert.equal((css.match(/kb-open \.omni-fab\{display:none\}/g) ?? []).length, 1, "one global rule, no page-specific exceptions");
   assert.match(css, /@media \(min-width:801px\)\{\.restbar\{left:240px\}\}/);

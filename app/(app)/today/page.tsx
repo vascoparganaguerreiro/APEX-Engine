@@ -10,7 +10,7 @@ import {
   type ActLite, type DailyRow, type PanelLite, type ResultLite, type StrengthLite,
 } from "@/lib/today/model";
 import {
-  loadActiveWorkout, loadActivities, loadBiomarkers, loadDaily, loadIntervalsConnected, loadLatestDaily, loadPrimaryGoal, loadProfileLite, loadRaces, loadStrength, loadSupplements,
+  loadActiveWorkout, loadActivities, loadBiomarkers, loadDaily, loadIntervalsConnected, loadIntervalsLastSync, loadLatestDaily, loadPrimaryGoal, loadProfileLite, loadRaces, loadStrength, loadSupplements,
   loadWhoopRecovery, type ProfileLite, type Section,
 } from "@/lib/today/load";
 import type { Intake, Schedule, Supplement } from "@/lib/health/core";
@@ -54,6 +54,7 @@ export default function TodayPage() {
   const [active, setActive] = useState<{ title: string; startedAt: string } | null>(null);
   const [whoop, setWhoop] = useState<{ value: number; day: string | null } | null>(null);
   const [intervals, setIntervals] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [intervalsKnown, setIntervalsKnown] = useState(false);   // false until the connection check has answered (then no "connect a source" hint is shown)
   const [quick, setQuick] = useState<{ open: boolean; tab: QuickTab }>({ open: false, tab: "wellness" });
   const [trendRange, setTrendRange] = useState<14 | 30>(14);
@@ -71,6 +72,7 @@ export default function TodayPage() {
     void loadLatestDaily().then(setCoach);
     void loadActiveWorkout().then(setActive);
     void loadWhoopRecovery().then(setWhoop);
+    void loadIntervalsLastSync().then(setLastSyncAt);
     void loadIntervalsConnected().then((v) => { setIntervals(v); setIntervalsKnown(true); });
   }, []);
   useEffect(() => { if (session) void loadPrimaryGoal().then(setPrimaryGoal); }, [session]);
@@ -125,7 +127,7 @@ export default function TodayPage() {
     race: load(races), hasRace: !!race, biomarkers: load(bio), hasBiomarkers: !!b, supplements: load(sups), hasSupplements,
   });
   const cards: Record<SectionKey, React.ReactNode> = {
-    wellness: <WellnessCard s={daily ?? LOADING} w={w} today={today} goal={goal} onLog={() => openQuick("wellness")} quiet={action.kind === "log-wellness" || action.kind === "data-unavailable"} guidanceAbove={action.kind === "readiness-guidance"} key="wellness" />,
+    wellness: <WellnessCard s={daily ?? LOADING} w={w} today={today} goal={goal} lastSyncAt={lastSyncAt} onLog={() => openQuick("wellness")} quiet={action.kind === "log-wellness" || action.kind === "data-unavailable"} guidanceAbove={action.kind === "readiness-guidance"} key="wellness" />,
     endurance: <EnduranceCard s={acts ?? LOADING} e={e} today={today} key="endurance" />,
     strength: <StrengthCard s={strength ?? LOADING} st={st} today={today} active={active} key="strength" />,
     race: <RaceCard s={races ?? LOADING} race={race} today={today} key="race" />,

@@ -127,3 +127,8 @@ export async function loadWhoopRecovery(): Promise<{ value: number; day: string 
 export async function loadIntervalsConnected(): Promise<boolean> {
   try { const { data } = await getSupabase().from("intervals_connections").select("athlete_id").maybeSingle(); return !!data; } catch { return false; }
 }
+
+/** Last successful Intervals.icu sync (intervals_connections.last_sync_at, written only after a sync completes), or null. Read-only; never triggers a sync. */
+export async function loadIntervalsLastSync(): Promise<string | null> {
+  try { const { data } = await getSupabase().from("intervals_connections").select("last_sync_at").maybeSingle(); return data?.last_sync_at ?? null; } catch { return null; }
+}

@@ -146,4 +146,8 @@ export const CHEST_SHOULDERS = [
   x("band_pull_apart", "Band Pull-Apart", "upper_back,shoulders", "", "band", "horizontal_pull", "isolation", "shoulder_stability",
     "Hold a band in front of the chest with straight arms|Pull the band apart until it touches the chest|Return slowly",
     "Keep the arms at shoulder height|Move at the shoulders, not the elbows", "Shrugging|Arching the back", { difficulty: "beginner", rest: 45, measurement: "bodyweight_reps", loadMode: "none" }),
+  x("scapular_raise", "Hanging Scapular Raise", "upper_back", "shoulders,lats,forearms", "bodyweight", "vertical_pull", "isolation", "pull_up",
+    "Hang from a pull-up bar with an overhand grip, hands just wider than the shoulders, arms straight and feet off the floor|Keeping the elbows locked straight, pull the shoulder blades down away from the ears so the body rises a few centimetres (scapular depression)|Slowly let the shoulders rise back up towards the ears (scapular elevation, the shrug) into a full hang: that is one rep. Keep the movement smooth and controlled",
+    "Elbows stay straight the whole time|Think of pushing the shoulders down, away from the ears|Pause briefly at the top and at the bottom|Keep the body still, no swinging", "Bending the elbows and turning it into a pull-up|Swinging or kipping the legs and body|Cutting the range short at the top or the bottom",
+    { measurement: "bodyweight_reps", loadMode: "none", aliases: "scapular raises,scapular elevation,shoulder blade raise,hanging scapular raises,scapular shrug,scapular shrugs,hanging scapular shrug", difficulty: "beginner", rest: 60 }),
 ];

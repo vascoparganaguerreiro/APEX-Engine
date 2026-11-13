@@ -90,7 +90,7 @@ export function workoutFromRow(r: Record<string, unknown>, resolve: (key: string
   };
 }
 export function hsessionFromWorkout(w: Workout): HSession {
-  return { id: w.id, title: w.title, startedAt: w.startedAt, endedAt: w.endedAt, pausedSeconds: w.pausedSeconds, source: w.source, exercises: w.exercises.map((e) => ({ key: e.key, name: e.name, loadMode: e.loadMode, sets: e.sets.map((s) => ({ type: s.type, weight: s.weight, unit: s.unit, reps: s.reps, duration_s: s.duration_s, distance_m: s.distance_m, rpe: s.rpe, completed: s.completed })) })) };
+  return { id: w.id, title: w.title, startedAt: w.startedAt, endedAt: w.endedAt, pausedSeconds: w.pausedSeconds, source: w.source, exercises: w.exercises.map((e) => ({ key: e.key, name: e.name, loadMode: e.loadMode, sets: e.sets.map((s) => ({ side: s.side, type: s.type, weight: s.weight, unit: s.unit, reps: s.reps, duration_s: s.duration_s, distance_m: s.distance_m, rpe: s.rpe, completed: s.completed })) })) };
 }
 
 /** Read every row of an ordered query in pages. PostgREST silently caps a single response (Supabase default max_rows = 1000), so a

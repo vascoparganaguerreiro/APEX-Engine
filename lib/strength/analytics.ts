@@ -5,14 +5,16 @@ import { COUNTS_AS_WORK, MUSCLES, type Exercise, type LoadMode, type Muscle, typ
 import { setVolumeKg, toKg } from "./units.ts";
 import type { Workout } from "./workout.ts";
 
-export interface HSet { type: SetType; weight: number | null; unit: WeightUnit; reps: number | null; duration_s: number | null; distance_m: number | null; rpe: number | null; completed: boolean }
+export interface HSet { type: SetType; weight: number | null; unit: WeightUnit; reps: number | null; duration_s: number | null; distance_m: number | null; rpe: number | null; completed: boolean;
+  /** Which side a one-sided set was done on. Absent in history saved before this was kept: then the side is unknown, never assumed. */
+  side?: "left" | "right" | null }
 export interface HExercise { key: string | null; name: string; loadMode: LoadMode; sets: HSet[] }
 export interface HSession { id: string; title: string; startedAt: string; endedAt: string | null; pausedSeconds: number; source: string; exercises: HExercise[] }
 
 export function fromWorkout(w: Workout): HSession {
   return {
     id: w.id, title: w.title, startedAt: w.startedAt, endedAt: w.endedAt, pausedSeconds: w.pausedSeconds, source: w.source,
-    exercises: [...w.exercises].sort((a, b) => a.position - b.position).map((e) => ({ key: e.key, name: e.name, loadMode: e.loadMode, sets: e.sets.map((s) => ({ type: s.type, weight: s.weight, unit: s.unit, reps: s.reps, duration_s: s.duration_s, distance_m: s.distance_m, rpe: s.rpe, completed: s.completed })) })),
+    exercises: [...w.exercises].sort((a, b) => a.position - b.position).map((e) => ({ key: e.key, name: e.name, loadMode: e.loadMode, sets: e.sets.map((s) => ({ type: s.type, weight: s.weight, unit: s.unit, reps: s.reps, duration_s: s.duration_s, distance_m: s.distance_m, rpe: s.rpe, completed: s.completed, side: s.side })) })),
   };
 }
 

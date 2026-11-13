@@ -128,7 +128,7 @@ export function metricSpecs(i: MetricInput, keys: readonly MetricKey[]): MetricS
         delta: ok ? BAND_TEXT[ok.band] : null,
         context: ok ? `${BAND_TEXT[ok.band]} · ${ok.confidence} confidence${ok.provisional ? " (provisional)" : ""}` : null,
         tone: ok ? BAND_TONE[ok.band] : undefined, badge: ok?.provisional ? { text: "Provisional", tone: "warn" } : null,
-        explain: "APEX Readiness Estimate: today's measurements compared with your own baseline. It is an estimate, not a clinical measurement or a diagnosis.",
+        explain: "APEX Readiness Estimate: today's measurements compared with your own baseline. It is different from Garmin Training Readiness. It is an estimate, not a clinical measurement or a diagnosis.",
         empty: est?.status === "insufficient" ? `Not enough data yet. ${est.reasons[0] ?? ""}`.trim() : missing("Not enough data yet."), progress: null,
         emptyKind: est?.status === "insufficient" ? undefined : "wellness",
       };
