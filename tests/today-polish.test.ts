@@ -84,9 +84,14 @@ test("compact metrics: name, value and unit first; context, source and meaning i
   const card = flat(read("components/ui/MetricCard.tsx"));
   assert.match(card, /<p className="ds-metric-value"><b>\{m\.value\}<\/b>\{m\.unit && <small>\{m\.unit\}<\/small>\}<\/p>/);
   assert.match(card, /\{m\.delta && <p className="ds-metric-delta">/);
-  assert.match(card, /<details className="ds-explain"> <summary>Details<\/summary> \{showContext && <p>\{m\.context\}<\/p>\} \{m\.source && <p>Source: \{m\.source\}<\/p>\} <p>\{m\.explain\}<\/p> <\/details>/);
+  assert.match(card, /<div id=\{panel\} className="ds-explain" hidden=\{!open\}> \{showContext && <p>\{m\.context\}<\/p>\} \{m\.source && <p>Source: \{m\.source\}<\/p>\} <p>\{m\.explain\}<\/p> <\/div>/, "context, source and meaning are all kept");
+  assert.doesNotMatch(card, /<summary>|<details/, "no separate Details row: the disclosure lives in the heading");
+  assert.match(card, /<h3><button type="button" className="ds-metric-toggle" aria-expanded=\{open\} aria-controls=\{panel\} onClick=\{\(\) => setOpen\(\(v\) => !v\)\}><span>\{m\.label\}<\/span>/, "the heading contains the real button");
+  assert.match(card, /const panel = useId\(\)/); assert.match(card, /^"use client";/);
+  assert.match(css, /\.ds-metric-toggle\{[^}]*min-height:44px;min-width:44px/); assert.match(css, /\.ds-metric-toggle:focus-visible\{outline:2px solid/);
+  assert.match(css, /\.ds-explain\[hidden\]\{display:none\}/);
   assert.ok(!/aria-label=\{m\.label\}/.test(card), "the heading is not announced twice");
-  assert.match(css, /\.ds-metric-value b\{font-size:26px/); assert.match(css, /\.ds-explain summary\{[^}]*min-height:44px/);
+  assert.match(css, /\.ds-metric-value b\{font-size:26px/); assert.ok(!/\.ds-explain summary/.test(css), "the old Details summary styling is gone");
 });
 
 // ------------------------------------------------------------------ 2. one setup area
@@ -130,7 +135,11 @@ test("five-day strip: compact horizontal strip, today and the selected day disti
   assert.match(fd, /<button key=\{d\.day\} type="button"/); assert.match(fd, /aria-pressed=\{on\}/); assert.match(fd, /aria-current=\{d\.label === "Today" \? "date" : undefined\}/);
   assert.match(fd, /kinds = \[\.\.\.new Set\(d\.items\.map\(\(i\) => i\.kind\)\)\]/, "dots come only from the day's own items");
   assert.match(fd, /\{kinds\.map\(\(k\) => <i key=\{k\} className=\{`td-dot2 k-\$\{k\}`\} \/>\)\}/);
-  assert.match(fd, /nothing recorded/); assert.match(fd, /Nothing recorded for this day\./);
+  assert.match(fd, /nothing recorded/); assert.match(fd, /No activity recorded or workout planned today\./); assert.match(fd, /No workouts planned\./);
+  assert.doesNotMatch(fd, /Nothing recorded for this day|nothing is planned for you|Planned workouts are the ones you add/, "the repetitive wording is gone");
+  assert.match(fd, /APEX does not plan for you/, "the honest note that nothing is planned automatically stays, once, in one short line");
+  assert.match(css, /\.ds-setup-list li\{display:flex;flex-flow:row wrap;/, "setup rows are one wrapped line each, not stacked blocks");
+  assert.match(read("components/today/SetupArea.tsx"), />Not set up</); assert.match(read("components/today/SetupArea.tsx"), /className="ds-setup-link"/); assert.match(read("components/today/SetupArea.tsx"), /More you can add/, "actions and optional links are kept");
   assert.match(fd, /<Link href=\{it\.href\}/, "items still link to their existing pages"); assert.match(fd, /href="\/training"/);
   assert.ok(fd.indexOf("days.map((d) => {") < fd.indexOf("cur.items.map"), "strip first, then the day's items: reading order equals visual order");
   assert.match(css, /\.td-strip\{display:flex;[^}]*overflow-x:auto;scroll-snap-type:x proximity/); assert.match(css, /\.td-chip\{[^}]*min-width:64px;min-height:64px/);

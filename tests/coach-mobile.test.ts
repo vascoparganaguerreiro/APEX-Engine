@@ -43,11 +43,11 @@ test("desktop keeps the original layout: header hidden, body always shown; the c
 });
 
 test("composer: sticky at the bottom above the bar and the safe area, releases the bar space while the keyboard is open, 48px targets, no auto-focus", () => {
-  assert.match(media, /\.composer\{position:sticky;bottom:var\(--bnav-h\);/);
+  assert.match(media, /\.composer\{flex:none;position:sticky;bottom:var\(--bnav-h\);/);
   assert.match(media, /:root\.kb-open\{--bnav-h:0px\}/);
   assert.match(css, /--bnav-h:calc\(60px \+ env\(safe-area-inset-bottom\)\)/, "--bnav-h already contains the safe-area inset");
   assert.match(media, /\.composer \.chatinput textarea\{min-height:48px;/); assert.match(media, /\.composer \.chatinput \.btn\{min-height:48px\}/);
-  assert.match(media, /\.coachpage\.chatmode\{display:flex;flex-direction:column;min-height:calc\(100vh - var\(--bnav-h\) - 16px\);min-height:calc\(100dvh - var\(--bnav-h\) - 16px\)\}/);
+  assert.match(media, /\.coachpage\.chatmode\{display:flex;flex-direction:column;height:calc\(100vh - var\(--bnav-h\) - 16px\);height:calc\(100dvh - var\(--bnav-h\) - 16px\);overflow:hidden\}/);
   assert.match(media, /\.chatmode \.chatlog>div:last-child\{scroll-margin-bottom:150px\}/, "the newest message is never hidden behind the composer");
   assert.doesNotMatch(chat, /autoFocus/, "the keyboard does not pop up by itself");
   assert.match(page, /className=\{chatTab \? "coachpage chatmode" : "coachpage"\}/); assert.match(page, /const chatTab = tab === "ask" \|\| tab === "plan"/);

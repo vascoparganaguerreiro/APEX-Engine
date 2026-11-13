@@ -14,11 +14,11 @@ export default function WeekCard({ start, end, totals, summary, busy, canNext, o
         <b>Week of {fmt(start)} – {fmt(end)}</b>
         <button className="btn ghost" type="button" onClick={onNext} disabled={!canNext} aria-label="Next week">›</button>
       </div>
-      <div className="metrics">
+      <div className="metrics week-metrics">
         <div><small>Sessions</small><b>{totals.sessions}</b></div>
         <div><small>Time</small><b>{formatDuration(totals.minutes * 60)}</b></div>
         <div><small>Load</small><b>{totals.load}</b></div>
-        <div className="wide"><small>Distance</small><b>{km || "—"}</b></div>
+        <div><small>Distance</small><b>{km || "—"}</b></div>
       </div>
       <div className="row">
         <button className="btn" type="button" disabled={busy || totals.sessions === 0} onClick={onSummarize}>

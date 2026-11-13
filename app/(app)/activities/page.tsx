@@ -6,7 +6,7 @@ import { summarize } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { friendlyMessage } from "@/lib/userError";
 import {
-  SPORT_LABEL, addDaysIso, filterActivities, formatDistance, formatDuration, localDay, summarizeActivities,
+  SPORT_LABEL, addDaysIso, filterActivities, formatDistance, formatDuration, localDay, paceKpiLabel, summarizeActivities,
   weekStart, weekTotals, type Activity,
 } from "@/lib/activities";
 import EmptyState from "@/components/ui/EmptyState";
@@ -69,6 +69,7 @@ export default function ActivitiesPage() {
     [acts, inWeek, sport, query, searching],
   );
   const sum = useMemo(() => summarizeActivities(shown.filter((a) => !dup.has(a.id)), sport), [shown, sport, dup]);
+  const paceKpi = paceKpiLabel(sport);
   const sports = useMemo(() => {
     const present = new Set((acts ?? []).map((a) => a.sport));
     return Object.keys(SPORT_LABEL).filter((s) => present.has(s)).concat([...present].filter((s) => !(s in SPORT_LABEL)));
@@ -128,11 +129,7 @@ export default function ActivitiesPage() {
           <div className="kpis">
             <div className="kpi"><small>Distance</small><b>{sum.distanceM ? formatDistance(sum.distanceM) : "—"}</b></div>
             <div className="kpi"><small>Time</small><b>{formatDuration(sum.durationS)}</b></div>
-            <div className="kpi">
-              <small>{sport === "bike" ? "Avg speed" : "Avg pace"} / power</small>
-              <b>{sum.pace ?? "—"}</b>
-              <em>{sum.pace ? "" : ["run", "bike", "swim"].includes(sport) ? "" : "pick a sport"}</em>
-            </div>
+            {paceKpi && <div className="kpi"><small>{paceKpi}</small><b>{sum.pace ?? "—"}</b></div>}
             <div className="kpi"><small>TSS</small><b>{sum.load || "—"}</b></div>
           </div>
           <p className="muted small">{sum.sessions} session{sum.sessions === 1 ? "" : "s"}{searching ? " matching your search" : " this week"}. Power is not imported yet.</p>

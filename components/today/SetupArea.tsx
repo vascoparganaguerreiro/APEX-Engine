@@ -8,7 +8,7 @@ export default function SetupArea({ groups, setup }: { groups: EmptyGroup[]; set
   if (groups.length === 0 && setup.needed.length === 0 && setup.optional.length === 0) return null;
   return (
     <section className="ds-setup" aria-labelledby="td-setup-h">
-      <h3 id="td-setup-h">Missing or not set up</h3>
+      <h3 id="td-setup-h">Not set up</h3>
       {(groups.length > 0 || setup.needed.length > 0) && (
         <ul className="ds-setup-list">
           {groups.map((g) => <li key={g.message}><b>{g.labels.join(", ")}</b><span>{g.message}</span></li>)}

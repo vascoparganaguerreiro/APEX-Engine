@@ -20,7 +20,7 @@ export default function FiveDay({ days }: { days: DayCol[] }) {
   if (!cur) return null;
   return (
     <section className="td-five" aria-labelledby="td-five-h">
-      <div className="td-section-head"><h2 id="td-five-h">Next five days</h2><span className="td-meta">races, planned workouts, sessions done today and scheduled supplement doses</span></div>
+      <div className="td-section-head"><h2 id="td-five-h">Next five days</h2><span className="td-meta">Races, planned workouts, sessions and supplement doses</span></div>
       <div className="td-strip" role="group" aria-label="Choose a day">
         {days.map((d) => {
           const on = d.day === cur.day, kinds = [...new Set(d.items.map((i) => i.kind))];
@@ -36,7 +36,7 @@ export default function FiveDay({ days }: { days: DayCol[] }) {
       </div>
       <div className="td-dayplan" aria-live="polite">
         <h3>{cur.label}, {shortDate(cur.day)}</h3>
-        {cur.items.length === 0 ? <p className="td-meta">Nothing recorded for this day.</p> : (
+        {cur.items.length === 0 ? <p className="td-meta">{cur.label === "Today" ? "No activity recorded or workout planned today." : "No workouts planned."}</p> : (
           <ul className="td-planlist">
             {cur.items.map((it, i) => (
               <li key={i}><Link href={it.href} className={`td-item k-${it.kind} s-${it.status}`}>
@@ -47,7 +47,7 @@ export default function FiveDay({ days }: { days: DayCol[] }) {
           </ul>
         )}
       </div>
-      <p className="td-meta" style={{ marginTop: 8 }}>{any ? "" : "Nothing scheduled in the next five days. "}Planned workouts are the ones you add in <Link href="/training" className="td-link">Training</Link>; nothing is planned for you.</p>
+      <p className="td-meta" style={{ marginTop: 8 }}>{any ? "" : "Nothing in the next five days. "}Add planned workouts in <Link href="/training" className="td-link">Training</Link>; APEX does not plan for you.</p>
     </section>
   );
 }

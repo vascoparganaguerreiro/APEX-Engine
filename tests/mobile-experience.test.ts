@@ -122,9 +122,9 @@ test("Coach composer CSS: pill, 16px text (no iOS zoom), capped height, 48px cir
   assert.match(phone, /\.composer \.chatinput:focus-within\{border-color:var\(--focus\)\}/);
   assert.match(phone, /\.composer \.chatinput textarea\{min-height:48px;max-height:30vh;border:0;[^}]*font-size:16px/);
   assert.match(phone, /\.composer \.chatinput \.sendbtn\{flex:none;width:48px;padding:0;border-radius:50%/); assert.match(phone, /\.composer \.sendtxt\{display:none\}\.composer \.sendico\{display:block\}/);
-  assert.match(phone, /\.composer\{position:sticky;bottom:var\(--bnav-h\);/); assert.match(phone, /:root\.kb-open\{--bnav-h:0px\}/);
+  assert.match(phone, /\.composer\{flex:none;position:sticky;bottom:var\(--bnav-h\);/); assert.match(phone, /:root\.kb-open\{--bnav-h:0px\}/);
   assert.match(phone, /\.chatmode \.chatlog>div:last-child\{scroll-margin-bottom:150px\}/, "the newest message is never hidden behind the composer");
-  assert.match(phone, /\.chatmode \.chatlog\{flex:1;max-height:none;min-height:140px\}/);
+  assert.match(phone, /\.chatmode \.chatlog\{flex:1;max-height:none;min-height:0;overflow-y:auto;/);
   assert.match(phone, /\.composer>p\{font-size:12px/, "the safety note is no smaller than 12px");
   assert.match(phone, /\.sug-strip\{display:flex;gap:8px;overflow-x:auto;/); assert.match(phone, /\.sug-strip \.chip\{min-height:40px\}/);
   assert.doesNotMatch(phone.slice(phone.indexOf(".composer{")), /\.composer[^{]*\{[^}]*(box-shadow|gradient)/, "no shadow or gradient on the composer");

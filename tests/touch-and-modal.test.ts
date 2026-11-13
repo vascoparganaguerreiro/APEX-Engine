@@ -77,11 +77,11 @@ test("More sheet: the bar is also inert while open (no keyboard or assistive acc
 
 // ------------------------------------------------------------------ 7. Details touch targets
 test("metric-card Details and the setup 'More you can add' control are at least 44px high, and span the card width", () => {
-  for (const s of [".ds-explain summary", ".ds-setup-more summary"]) {
-    const d = sel(s)[0].decl; assert.ok(Number(d.match(/min-height:(\d+)px/)?.[1]) >= 44, `${s} is at least 44px`); assert.match(d, /display:flex;align-items:center/);
+  for (const s of [".ds-metric-toggle", ".ds-setup-more summary"]) {
+    const d = sel(s)[0].decl; assert.ok(Number(d.match(/min-height:(\d+)px/)?.[1]) >= 44, `${s} is at least 44px`); assert.match(d, /align-items:center/);
     assert.ok(!/padding:[^;]*0 4px/.test(d), `${s}: no padding trick that shrinks the target`);
   }
-  assert.match(read("components/ui/MetricCard.tsx"), /<details className="ds-explain">\s*<summary>Details<\/summary>/);
+  assert.match(read("components/ui/MetricCard.tsx"), /className="ds-metric-toggle" aria-expanded=\{open\} aria-controls=\{panel\}/);
   assert.match(read("components/today/SetupArea.tsx"), /<summary>More you can add<\/summary>/);
   assert.match(css, /a:focus-visible,button:focus-visible,summary:focus-visible/, "the focus ring is kept");
 });

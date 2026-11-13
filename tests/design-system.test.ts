@@ -35,7 +35,7 @@ test("ui helpers: button, badge, progress and freshness rules", () => {
 test("components: semantic HTML and accessible patterns, no UI framework", () => {
   const btn = read("components/ui/Button.tsx"), metric = read("components/ui/MetricCard.tsx"), prog = read("components/ui/Progress.tsx"), head = read("components/ui/SectionHeader.tsx"), sk = read("components/ui/Skeleton.tsx");
   assert.match(btn, /<Link className=\{cls\} href=/); assert.match(btn, /<button type=/); assert.match(btn, /aria-busy/); assert.match(btn, /disabled=\{b\.disabled \|\| b\.loading\}/);
-  assert.match(metric, /<article/); assert.match(metric, /<h3>/); assert.match(metric, /<details className="ds-explain">\s*<summary>Details/);
+  assert.match(metric, /<article/); assert.match(metric, /<h3>/); assert.match(metric, /<div id=\{panel\} className="ds-explain" hidden=\{!open\}>/);
   assert.match(prog, /role="progressbar"/); assert.match(prog, /aria-valuenow/); assert.match(head, /const H = `h\$\{level\}`/);
   assert.match(sk, /aria-hidden="true"/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)\{\.ds-skel\{animation:none\}\}/);

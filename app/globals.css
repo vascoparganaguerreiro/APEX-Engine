@@ -75,6 +75,8 @@ input:disabled,select:disabled,textarea:disabled{opacity:.55;cursor:not-allowed}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:14px}
 .metrics>div{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column}
 .metrics small{color:var(--muted);font-size:11px}.metrics b{font-size:18px;font-weight:700}.metrics .wide{grid-column:span 2}
+/* weekly summary: a balanced 2x2 grid at every width; a long distance list wraps inside its tile instead of overflowing */
+.week-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.week-metrics>div{min-width:0}.week-metrics b{overflow-wrap:anywhere;line-height:1.25}
 textarea{background:var(--card2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;font-size:14px;outline:0;width:100%;resize:vertical}
 textarea:focus{border-color:var(--green)}
 .note{margin-bottom:10px}.row{display:flex;gap:10px;flex-wrap:wrap}
@@ -460,12 +462,14 @@ select{background:var(--card2);color:var(--text);border:1px solid var(--line);bo
   .coachpage .captile{flex:none;flex-direction:row;align-items:center;min-height:44px;padding:0 16px;border-radius:999px}
   .coachpage .captile .muted{display:none}.coachpage .captile b{font-size:14px;white-space:nowrap}
   .coachpage .captile.on{border-color:#38d4d0;box-shadow:none;color:#38d4d0}
-  .coachpage.chatmode{display:flex;flex-direction:column;min-height:calc(100vh - var(--bnav-h) - 16px);min-height:calc(100dvh - var(--bnav-h) - 16px)}
-  .coachpage.chatmode .chatwrap{flex:1;min-height:340px;display:flex;flex-direction:column;gap:8px}
+  /* chat tab: the page is exactly one screen tall (above the bar, or the keyboard when it is open); only the conversation scrolls, the composer is the last flex item */
+  .main:has(.coachpage.chatmode){padding-bottom:0}
+  .coachpage.chatmode{display:flex;flex-direction:column;height:calc(100vh - var(--bnav-h) - 16px);height:calc(100dvh - var(--bnav-h) - 16px);overflow:hidden}
+  .coachpage.chatmode .chatwrap{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}
   .chatmode .chat{flex:1;min-height:0;display:flex;flex-direction:column}
-  .chatmode .chatlog{flex:1;max-height:none;min-height:140px}.chatmode .chatlog>div:last-child{scroll-margin-bottom:150px}
+  .chatmode .chatlog{flex:1;max-height:none;min-height:0;overflow-y:auto;overscroll-behavior:contain}.chatmode .chatlog>div:last-child{scroll-margin-bottom:150px}
   .chatmode .convs{flex-wrap:nowrap;overflow-x:auto;align-items:center;gap:8px;scrollbar-width:none}.chatmode .convs .btn{width:auto!important;flex:none;min-height:40px}.chatmode .convrow{flex:none}
-  .composer{position:sticky;bottom:var(--bnav-h);z-index:5;background:var(--bg);margin-top:8px;padding:6px 0 4px}
+  .composer{flex:none;position:sticky;bottom:var(--bnav-h);z-index:5;background:var(--bg);margin-top:8px;padding:6px 0 4px}
   .composer .chatinput{margin-top:0;gap:0;align-items:flex-end;border:1px solid var(--line);border-radius:26px;background:var(--card);transition:border-color .15s ease}
   .composer .chatinput:focus-within{border-color:var(--focus)}
   .composer .chatinput textarea{min-height:48px;max-height:30vh;border:0;border-radius:0;background:transparent;padding:12px 6px 12px 18px;font-size:16px;line-height:1.4;outline:0;overflow-y:auto}
@@ -514,25 +518,27 @@ a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visi
 .ds-metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:var(--sp-3)}
 .ds-metric{display:flex;flex-direction:column;gap:6px;min-width:0;padding:var(--sp-3) var(--sp-4);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--card)}
 .ds-metric-loading{gap:var(--sp-3);min-height:128px}
-.ds-metric-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);flex-wrap:wrap}
+.ds-metric-head{display:flex;align-items:center;margin-top:calc(-1 * var(--sp-2));justify-content:space-between;gap:var(--sp-2);flex-wrap:wrap}
 .ds-metric-head h3{margin:0;font-size:var(--fs-sm);font-weight:600;color:var(--text-2);letter-spacing:0}
 .ds-metric-value{margin:0;display:flex;align-items:baseline;gap:var(--sp-2);line-height:1.1}
 .ds-metric-value b{font-size:26px;font-weight:750;letter-spacing:-.02em}.ds-metric-value small{font-size:var(--fs-sm);color:var(--muted)}
 .ds-metric-delta{margin:0;font-size:var(--fs-xs);color:var(--text-2);line-height:1.4}
 .ds-facts{display:flex;gap:var(--sp-4);margin:0;font-size:var(--fs-xs)}.ds-facts div{display:flex;gap:6px;align-items:baseline}.ds-facts dt{color:var(--muted)}.ds-facts dd{margin:0;font-weight:650;color:var(--text)}
 .ds-tone-ok{border-left:3px solid var(--ok)}.ds-tone-info{border-left:3px solid var(--info)}.ds-tone-warn{border-left:3px solid var(--warn)}.ds-tone-danger{border-left:3px solid var(--danger)}
-.ds-setup{margin-top:var(--sp-3);padding:var(--sp-3) var(--sp-4);border:1px dashed var(--line);border-radius:var(--r-lg)}
-.ds-setup h3{margin:0 0 var(--sp-2);font-size:var(--fs-sm);font-weight:650;color:var(--text-2)}
-.ds-setup-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-3)}
-.ds-setup-list li{display:flex;flex-direction:column;gap:2px;font-size:var(--fs-sm);line-height:1.45}
+.ds-setup{margin-top:var(--sp-3);padding:var(--sp-2) var(--sp-3);border:1px dashed var(--line);border-radius:var(--r-lg)}
+.ds-setup h3{margin:0 0 var(--sp-1);font-size:var(--fs-sm);font-weight:650;color:var(--text-2)}
+.ds-setup-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-1)}
+.ds-setup-list li{display:flex;flex-flow:row wrap;align-items:center;gap:0 var(--sp-2);font-size:var(--fs-sm);line-height:1.45}
 .ds-setup-list li>span{color:var(--muted)}
-.ds-setup-link{align-self:flex-start;display:inline-flex;align-items:center;min-height:44px;color:var(--green)}
-.ds-setup-more{margin-top:var(--sp-2)}
+.ds-setup-link{display:inline-flex;align-items:center;min-height:44px;color:var(--green)}
+.ds-setup-more{margin-top:0}
 .ds-setup-more summary{cursor:pointer;font-size:var(--fs-xs);color:var(--muted);min-height:44px;display:flex;align-items:center}
 .ds-setup-more ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-4)}
 .ds-setup-more a{display:inline-flex;align-items:center;min-height:44px;color:var(--text-2);font-size:var(--fs-sm)}
-.ds-explain{margin-top:auto}
-.ds-explain summary{cursor:pointer;font-size:var(--fs-xs);color:var(--muted);min-height:44px;display:flex;align-items:center}
+.ds-metric-toggle{display:inline-flex;align-items:center;gap:6px;min-height:44px;min-width:44px;padding:0;margin:0;background:transparent;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ds-metric-toggle:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:var(--r-sm,6px)}
+.ds-metric-chev{flex:none;color:var(--muted);transition:transform .15s ease}.ds-metric-toggle[aria-expanded="true"] .ds-metric-chev{transform:rotate(180deg)}
+.ds-explain{margin-top:0}.ds-explain[hidden]{display:none}
 .ds-explain p{margin:4px 0 0;font-size:var(--fs-xs);line-height:1.5;color:var(--muted)}
 /* Today: next step */
 .ds-next{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4);flex-wrap:wrap;margin:0 0 var(--sp-5);padding:var(--sp-4) var(--sp-5);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--card2)}

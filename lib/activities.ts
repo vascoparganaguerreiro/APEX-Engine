@@ -47,6 +47,13 @@ export function paceLabel(sport: string, durationS: number | null, distanceM: nu
   return null;
 }
 
+/** Label for the average-pace tile of the selected sport, or null when that sport has no pace (All, strength, other): the tile is then not shown at all. */
+export function paceKpiLabel(sport: string): string | null {
+  if (sport === "run" || sport === "swim") return "Avg pace";
+  if (sport === "bike") return "Avg speed";
+  return null;
+}
+
 /** The calendar day (YYYY-MM-DD) of a timestamp in the given time zone (default: this device's). */
 export function localDay(iso: string, timeZone?: string): string {
   const d = new Date(iso);
