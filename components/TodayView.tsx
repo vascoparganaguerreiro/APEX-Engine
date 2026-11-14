@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import ReadinessRing from "./ReadinessRing";
 import TrendChart from "./TrendChart";
-import { tsbState, type Readiness, type TrendPoint, type Verdict } from "@/lib/engine";
+import { daysBetween, tsbState, type Readiness, type TrendPoint, type Verdict } from "@/lib/engine";
 import type { DailyRow } from "@/lib/types";
 
 const VERDICTS: Record<Verdict, { title: string; color: string; text: string }> = {
@@ -23,6 +23,8 @@ export default function TodayView({ result, latest, goal, today, trend }: {
   const view = trend.slice(-range);
   const days = view.map((p) => p.day);
   const stale = !latest || latest.day !== today;
+  // A verdict is advice for today, so it is only shown as one when it comes from today's measurements.
+  const age = latest ? Math.max(daysBetween(latest.day, today), 0) : 0;
 
   const sleepH = latest?.sleep_minutes ? latest.sleep_minutes / 60 : null;
   const v = result ? VERDICTS[result.verdict] : null;
@@ -39,10 +41,19 @@ export default function TodayView({ result, latest, goal, today, trend }: {
 
       {result && v && latest && (
         <div className="today-grid">
-          <ReadinessRing score={result.score} color={v.color} />
+          <ReadinessRing score={result.score} color={stale ? "var(--muted)" : v.color} label={stale ? "LAST READING" : undefined} />
           <div>
-            <div className="verdict" style={{ color: v.color }}>{v.title}</div>
-            <p>{v.text}</p>
+            {stale ? (
+              <>
+                <div className="verdict" style={{ color: "var(--muted)" }}>No verdict for today</div>
+                <p>The last reading was “{v.title}” on {latest.day} ({age === 1 ? "yesterday" : `${age} days ago`}). It does not describe today.</p>
+              </>
+            ) : (
+              <>
+                <div className="verdict" style={{ color: v.color }}>{v.title}</div>
+                <p>{v.text}</p>
+              </>
+            )}
             <p className="muted small">
               Latest entry: {latest.day} · HRV baseline: {result.baselineDays}/14 days
               {result.baselineDays < 3 ? " (still building, score is provisional)" : ""}

@@ -56,3 +56,20 @@ test("extractText reads Gemini's answer shape", () => {
   assert.equal(extractText({ candidates: [] }), null);
   assert.equal(extractText(null), null);
 });
+
+test("nextRace: counted from today, never a race that is already over", async () => {
+  const { nextRace } = await import("../lib/summary.ts");
+  const races = [{ name: "Spring 10k", race_date: "2026-09-01" }, { name: "Marathon", race_date: "2026-12-06" }, { name: "Late", race_date: "2027-03-01" }];
+  assert.deepEqual(nextRace(races, "2026-11-14"), { name: "Marathon", days: 22 });      // the past race is skipped
+  assert.deepEqual(nextRace(races, "2026-12-06"), { name: "Marathon", days: 0 });       // race day itself still counts
+  assert.equal(nextRace(races, "2027-03-02"), null);
+  assert.equal(nextRace([{ name: "Bad", race_date: null }, { name: "Old", race_date: "2020-01-01" }], "2026-11-14"), null);
+  assert.deepEqual(nextRace([{ name: "B", race_date: "2026-11-20" }, { name: "A", race_date: "2026-11-15T00:00:00Z" }], "2026-11-14"), { name: "A", days: 1 });
+});
+
+test("the prompt never states a negative countdown and reads naturally on race day", () => {
+  const base = { today: "2026-11-14", activity: { day: "2026-11-14", sport: "run", title: null, minutes: 30, km: 5, pace: null, avgHr: null, load: null, note: null },
+    sameSportRecent: [], typical: { sessions: 0, avgMinutes: null, avgLoad: null }, load: null, morning: null, sevenDay: null };
+  assert.match(buildActivityPrompt({ ...base, race: { name: "X", days: 0 } }), /Next race: X today/);
+  assert.match(buildActivityPrompt({ ...base, race: { name: "X", days: 1 } }), /Next race: X in 1 day\n/);
+});

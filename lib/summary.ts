@@ -22,7 +22,22 @@ export interface RaceInfo { name: string; days: number }
 const n0 = (x: number | null | undefined, unit = "") => (x === null || x === undefined ? "n/a" : `${Math.round(x)}${unit}`);
 const loadLine = (l: LoadState | null) =>
   l ? `Training load model: CTL (fitness) ${l.ctl.toFixed(0)}, ATL (fatigue) ${l.atl.toFixed(0)}, TSB (form) ${l.tsb >= 0 ? "+" : ""}${l.tsb.toFixed(0)} (${l.state})` : "Training load model: not available";
-const raceLine = (r: RaceInfo | null) => (r ? `Next race: ${r.name} in ${r.days} days` : "Next race: none registered");
+const raceLine = (r: RaceInfo | null) =>
+  !r ? "Next race: none registered" : `Next race: ${r.name} ${r.days === 0 ? "today" : r.days === 1 ? "in 1 day" : `in ${r.days} days`}`;
+
+const dayNumber = (iso: string) => { const [y, m, d] = iso.split("-").map(Number); return Date.UTC(y, m - 1, d) / 86_400_000; };
+
+/** The first race on or after `today` (both "YYYY-MM-DD"), counted from today. Races that are already over are
+ *  never "next", whatever day the summarised session or week was on. */
+export function nextRace(races: ReadonlyArray<{ name?: unknown; race_date?: unknown }>, today: string): RaceInfo | null {
+  let best: { name: string; date: string } | null = null;
+  for (const r of races) {
+    const date = typeof r.race_date === "string" ? r.race_date.slice(0, 10) : "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < today) continue;
+    if (!best || date < best.date) best = { name: String(r.name ?? "Race"), date };
+  }
+  return best ? { name: best.name, days: Math.round(dayNumber(best.date) - dayNumber(today)) } : null;
+}
 const briefLine = (b: Brief) =>
   `${b.day} ${b.sport}${b.title ? ` "${b.title}"` : ""}: ${b.minutes} min` +
   `${b.km !== null ? `, ${b.km.toFixed(1)} km` : ""}${b.pace ? `, ${b.pace}` : ""}` +

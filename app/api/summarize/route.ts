@@ -1,8 +1,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { addDays, daysBetween, loadSeries, tsbState } from "@/lib/engine";
+import { addDays, loadSeries, tsbState } from "@/lib/engine";
 import { addDaysIso, localDay, paceLabel, weekStart as mondayOf, weekTotals, type Activity, type WeekTotals } from "@/lib/activities";
 import {
-  buildActivityPrompt, buildWeekPrompt, extractText, rankModels, SUMMARY_SYSTEM,
+  buildActivityPrompt, buildWeekPrompt, extractText, nextRace, rankModels, SUMMARY_SYSTEM,
   type Brief, type LoadState,
 } from "@/lib/summary";
 import { AiUsageError, withAiUsage } from "@/lib/serverAiUsage";
@@ -111,12 +111,12 @@ async function context(sb: SupabaseClient, uid: string, endDay: string, rowsFrom
   const [prof, rows, race] = await Promise.all([
     sb.from("profiles").select("timezone").eq("id", uid).maybeSingle(),
     sb.from("activities").select(COLS).gte("started_at", `${rowsFromDay}T00:00:00Z`).lte("started_at", `${addDays(endDay, 1)}T23:59:59Z`).order("started_at"),
-    sb.from("races").select("name,race_date").gte("race_date", endDay).order("race_date").limit(1),
+    // "Next race" is relative to today, not to the summarised day. One day of slack covers every time zone.
+    sb.from("races").select("name,race_date").gte("race_date", addDays(new Date().toISOString().slice(0, 10), -1)).order("race_date").limit(5),
   ]);
   const tz: string = prof.data?.timezone ?? "UTC";
   const today = localDay(new Date().toISOString(), tz);
-  const r = race.data?.[0];
-  return { tz, today, rows: (rows.data ?? []) as Row[], race: r ? { name: String(r.name), days: daysBetween(today, r.race_date) } : null };
+  return { tz, today, rows: (rows.data ?? []) as Row[], race: nextRace(race.data ?? [], today) };
 }
 
 async function dailyAvg(sb: SupabaseClient, from: string, to: string) {
