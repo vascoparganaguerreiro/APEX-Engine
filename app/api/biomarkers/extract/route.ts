@@ -2,11 +2,12 @@ import { createHash } from "node:crypto";
 import { authUser, errorResponse } from "@/lib/serverAuth";
 import { extractText, rankModels } from "@/lib/summary";
 import { EXTRACTION_PROMPT, parseExtraction } from "@/lib/health/core";
+import { REPORT_MAX_BYTES, isMissingObject, parseReportPath } from "@/lib/health/report";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_BYTES = REPORT_MAX_BYTES;
 const TYPES = new Set(["application/pdf", "image/png", "image/jpeg", "image/webp"]);
 class ExtractError extends Error { constructor(public status: number, message: string) { super(message); } }
 let cachedModels: string[] | null = null;
@@ -58,25 +59,41 @@ async function readReport(key: string, mime: string, data: Buffer): Promise<unkn
   throw new ExtractError(last === 429 ? 429 : 502, last === 429 ? "The AI quota is used up for now. Enter the results manually or try later." : "The AI service did not answer.");
 }
 
-/** POST multipart "file" -> { sha256, duplicate?, extraction }. Nothing is saved here: the user must review and confirm. */
+/**
+ * POST JSON { path: "<uid>/<sha256>.<ext>" } -> { sha256, duplicate? } or { sha256, mime, extraction }.
+ * The browser uploads the report to the private "lab-reports" bucket first (Vercel limits function request bodies
+ * to ~4.5 MB, below our 10 MB file limit); the file is read back here with the caller's own Supabase client, so the
+ * storage policies (own folder only) apply. Nothing is saved here: the user must review and confirm.
+ */
 export async function POST(req: Request): Promise<Response> {
   try {
-    const { sb } = await authUser(req);
+    const { sb, uid } = await authUser(req);
     const key = process.env.GEMINI_API_KEY;
     if (!key) throw new ExtractError(503, "Automatic reading is not set up (GEMINI_API_KEY is missing on the server). You can still enter results manually.");
 
-    const form = await req.formData().catch(() => null);
-    const file = form?.get("file");
-    if (!(file instanceof Blob)) throw new ExtractError(400, "Attach a PDF or image of the report.");
-    if (file.size === 0 || file.size > MAX_BYTES) throw new ExtractError(413, "The file must be between 1 byte and 10 MB.");
-    const bytes = Buffer.from(await file.arrayBuffer());
+    const body = (await req.json().catch(() => null)) as { path?: unknown } | null;
+    if (!body || typeof body !== "object" || Array.isArray(body) || typeof body.path !== "string") throw new ExtractError(400, "Upload the report first, then send its storage path.");
+    const path = body.path;
+    const named = parseReportPath(path, uid);
+    if (!named) throw new ExtractError(400, "The report path is not valid.");
+
+    const { data: blob, error: dlError } = await sb.storage.from("lab-reports").download(path);
+    if (dlError || !blob) {
+      if (!dlError || isMissingObject(dlError as { message?: string; status?: number; statusCode?: string; code?: string })) throw new ExtractError(404, "The uploaded report was not found. Choose the file again.");
+      throw new ExtractError(502, "The uploaded report could not be read from storage. Try again.");
+    }
+    if (blob.size === 0 || blob.size > MAX_BYTES) throw new ExtractError(413, "The file must be between 1 byte and 10 MB.");
+    const bytes = Buffer.from(await blob.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > MAX_BYTES) throw new ExtractError(413, "The file must be between 1 byte and 10 MB.");
     const mime = sniff(bytes);
     if (!mime || !TYPES.has(mime)) throw new ExtractError(415, "Only PDF, PNG, JPEG or WebP files are supported.");
 
     const sha256 = createHash("sha256").update(bytes).digest("hex");
+    if (sha256 !== named.sha256) throw new ExtractError(400, "The uploaded file does not match its name. Choose the file again.");
     const { data: dup } = await sb.from("blood_panels").select("id,collected_on").eq("report_sha256", sha256).maybeSingle();
     if (dup) return Response.json({ sha256, duplicate: { id: dup.id, collected_on: dup.collected_on } });
 
+    // Everything above is free and rejects bad requests; only from here on is the (paid) AI service called.
     const extraction = parseExtraction(await readReport(key, mime, bytes), new Date().toISOString().slice(0, 10));
     return Response.json({ sha256, mime, extraction });
   } catch (e) {
