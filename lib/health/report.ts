@@ -45,3 +45,21 @@ export function removableUploads(created: Iterable<string>, keep: ReadonlyArray<
   const hold = new Set<string>([...keep, ...referenced].filter((x): x is string => typeof x === "string"));
   return [...new Set(created)].filter((p) => !hold.has(p));
 }
+
+/**
+ * How a paid reading by the AI service ended, for the "report_extract" daily allowance:
+ *  - "no_answer": the service did not do the work (unreachable, or an error status from every model tried).
+ *  - "timeout":   we stopped waiting; the service may still have processed (and billed) the whole file.
+ *  - "answered":  the service returned a response, even if it was empty, unparseable or held no usable values.
+ */
+export type ReadingOutcome = "no_answer" | "timeout" | "answered";
+
+/**
+ * Whether the allowance unit is given back. Only when the service did no work: that is never the user's doing.
+ * A timeout or an unusable answer still cost real money, and both depend on the file, so refunding them would let
+ * the same file be sent again and again for free; the user keeps manual entry. `undefined` is an unexpected
+ * server-side error (our bug, not something a file can trigger on purpose), which is given back.
+ */
+export function refundsReading(outcome: ReadingOutcome | undefined): boolean {
+  return outcome === undefined || outcome === "no_answer";
+}

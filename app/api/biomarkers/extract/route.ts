@@ -2,14 +2,17 @@ import { createHash } from "node:crypto";
 import { authUser, errorResponse } from "@/lib/serverAuth";
 import { extractText, rankModels } from "@/lib/summary";
 import { EXTRACTION_PROMPT, parseExtraction } from "@/lib/health/core";
-import { REPORT_MAX_BYTES, isMissingObject, parseReportPath } from "@/lib/health/report";
+import { REPORT_MAX_BYTES, isMissingObject, parseReportPath, refundsReading, type ReadingOutcome } from "@/lib/health/report";
+import { AiLimitError, AiUsageError, consumeAiUsage, releaseAiUsage } from "@/lib/serverAiUsage";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const MAX_BYTES = REPORT_MAX_BYTES;
 const TYPES = new Set(["application/pdf", "image/png", "image/jpeg", "image/webp"]);
-class ExtractError extends Error { constructor(public status: number, message: string) { super(message); } }
+/** `outcome` is set for failures of the paid AI reading; it decides whether the daily allowance unit is given back. */
+class ExtractError extends Error { constructor(public status: number, message: string, public outcome?: ReadingOutcome) { super(message); } }
+const COUNTED = " This attempt counts toward your daily limit.";
 let cachedModels: string[] | null = null;
 
 /** The declared type must match the file's real content (magic bytes). */
@@ -25,7 +28,7 @@ async function models(key: string): Promise<string[]> {
   if (process.env.GEMINI_MODEL) return [process.env.GEMINI_MODEL];
   if (cachedModels) return cachedModels;
   const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", { headers: { "x-goog-api-key": key } });
-  if (!r.ok) throw new ExtractError(502, "The AI service is not reachable.");
+  if (!r.ok) throw new ExtractError(502, "The AI service is not reachable.", "no_answer");
   const j = (await r.json()) as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> };
   cachedModels = rankModels(j.models ?? []).slice(0, 3);
   return cachedModels;
@@ -47,16 +50,16 @@ async function readReport(key: string, mime: string, data: Buffer): Promise<unkn
       }),
       });
     } catch (e) {
-      if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) throw new ExtractError(504, "Reading the report took too long. Try a smaller or clearer file, or enter the results manually.");
-      throw new ExtractError(502, "The AI service is not reachable.");
+      if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) throw new ExtractError(504, "Reading the report took too long. Try a smaller or clearer file, or enter the results manually." + COUNTED, "timeout");
+      throw new ExtractError(502, "The AI service is not reachable.", "no_answer");
     }
     if (!r.ok) { last = r.status; if ([403, 404, 429].includes(r.status)) continue; break; }
-    const text = extractText(await r.json());
-    if (!text) throw new ExtractError(502, "The AI could not read this file.");
+    const text = extractText(await r.json().catch(() => null));
+    if (!text) throw new ExtractError(502, "The AI could not read this file. Enter the results manually." + COUNTED, "answered");
     try { return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "")); }
-    catch { throw new ExtractError(502, "The AI returned an unreadable answer."); }
+    catch { throw new ExtractError(502, "The AI returned an unreadable answer. Enter the results manually." + COUNTED, "answered"); }
   }
-  throw new ExtractError(last === 429 ? 429 : 502, last === 429 ? "The AI quota is used up for now. Enter the results manually or try later." : "The AI service did not answer.");
+  throw new ExtractError(last === 429 ? 429 : 502, last === 429 ? "The AI quota is used up for now. Enter the results manually or try later." : "The AI service did not answer.", "no_answer");
 }
 
 /**
@@ -94,10 +97,23 @@ export async function POST(req: Request): Promise<Response> {
     if (dup) return Response.json({ sha256, duplicate: { id: dup.id, collected_on: dup.collected_on } });
 
     // Everything above is free and rejects bad requests; only from here on is the (paid) AI service called.
-    const extraction = parseExtraction(await readReport(key, mime, bytes), new Date().toISOString().slice(0, 10));
+    // One "report_extract" unit per reading. It is given back only when the AI service did no work (see
+    // refundsReading): a timeout or an empty/unparseable answer was still paid for and depends on the file,
+    // so refunding it would let the same file be sent again and again at no cost to the user.
+    const handle = await consumeAiUsage(uid, "report_extract");
+    let raw: unknown;
+    try { raw = await readReport(key, mime, bytes); }
+    catch (e) {
+      if (refundsReading(e instanceof ExtractError ? e.outcome : undefined)) await releaseAiUsage(handle);   // best effort, never throws
+      throw e;
+    }
+    // An answer with no usable values (all skipped, or none found) is a completed, paid reading: not refunded.
+    const extraction = parseExtraction(raw, new Date().toISOString().slice(0, 10));
     return Response.json({ sha256, mime, extraction });
   } catch (e) {
     if (e instanceof ExtractError) return Response.json({ error: e.message }, { status: e.status });
+    if (e instanceof AiLimitError) return Response.json({ error: `${e.message} You can still enter the results manually and save the blood test with this report attached.` }, { status: e.status });
+    if (e instanceof AiUsageError) return Response.json({ error: e.message }, { status: e.status });
     return errorResponse(e, "report extraction failed");
   }
 }

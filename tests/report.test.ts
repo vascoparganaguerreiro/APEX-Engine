@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { isMissingObject, parseReportPath, removableUploads, reportPath, uploadOutcome, REPORT_EXT } from "../lib/health/report.ts";
+import { isMissingObject, parseReportPath, refundsReading, removableUploads, reportPath, uploadOutcome, REPORT_EXT } from "../lib/health/report.ts";
 
 const UID = "0b9f6c1e-4a2d-4c7e-9f00-1234567890ab";
 const OTHER = "11111111-2222-4333-8444-555555555555";
@@ -78,4 +78,11 @@ test("cleanup removes only objects this page created that nothing needs", () => 
   // Duplicates collapse.
   assert.deepEqual(removableUploads(new Set([a, a]), [null], []), [a]);
   assert.deepEqual(removableUploads([a, a], [], []), [a]);
+});
+
+test("a lab report reading is refunded only when the AI service did no work", () => {
+  assert.equal(refundsReading("no_answer"), true, "unreachable / error status: nothing was produced or billed");
+  assert.equal(refundsReading(undefined), true, "unexpected server error: not the user's doing");
+  assert.equal(refundsReading("timeout"), false, "the service may have processed the whole file");
+  assert.equal(refundsReading("answered"), false, "an empty or unparseable answer was still paid for");
 });
