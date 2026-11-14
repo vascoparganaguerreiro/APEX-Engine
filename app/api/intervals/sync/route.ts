@@ -1,4 +1,4 @@
-import { IntervalsError, fetchActivities, fetchWellness } from "@/lib/intervals";
+import { ACTIVITY_CONFLICT, IntervalsError, activityUpsertRows, fetchActivities, fetchWellness } from "@/lib/intervals";
 import { authUser, errorResponse } from "@/lib/serverAuth";
 import { getConnection, markSynced } from "@/lib/serverConnections";
 
@@ -35,8 +35,7 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     if (acts.length) {
-      const { error } = await sb.from("activities").upsert(
-        acts.map((a) => ({ ...a, user_id: uid, source: "intervals" })), { onConflict: "user_id,source,external_id" });
+      const { error } = await sb.from("activities").upsert(activityUpsertRows(acts, uid), { onConflict: ACTIVITY_CONFLICT });
       if (error) throw new IntervalsError(500, "Could not save activities.");
     }
 

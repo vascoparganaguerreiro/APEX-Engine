@@ -5,13 +5,11 @@ import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/useAuth";
 import { errMsg, loadResults, loadSupplementsAndSchedules } from "@/lib/health/load";
 import {
-  ASSOCIATION_NOTE, activeOn, beforeAfter, change, observations, rangeStatus, sameRange, seriesKey, seriesLabel, splitByUnit, supplementEvents,
+  ASSOCIATION_NOTE, STATUS_CLASS, STATUS_TEXT, activeOn, beforeAfter, change, observations, rangeStatus, sameRange, seriesKey, seriesLabel, splitByUnit, supplementEvents,
   type ResultPoint, type Schedule, type Supplement,
 } from "@/lib/health/core";
 import BiomarkerChart from "@/components/health/BiomarkerChart";
 
-const STATUS_TEXT = { below: "Below lab range", within: "Within lab range", above: "Above lab range", unknown: "No range printed" } as const;
-const STATUS_CLASS = { below: "st-low", within: "st-ok", above: "st-high", unknown: "st-na" } as const;
 
 export default function MarkerPage() {
   const { session } = useAuth();

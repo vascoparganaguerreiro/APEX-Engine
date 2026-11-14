@@ -1,4 +1,5 @@
 import { getSupabase } from "./supabase";
+import { removableUploads, uploadOutcome } from "./health/report";
 
 export type SummarizeRequest = { kind: "activity"; id: number } | { kind: "week"; weekStart: string };
 
@@ -50,15 +51,30 @@ export interface ReportExtractResult {
   extraction?: import("./health/core").Extraction;
 }
 
-/** Send a lab report to the server for automatic reading. Nothing is saved: the result must be reviewed first. */
-export async function extractReport(file: File): Promise<ReportExtractResult> {
-  const { data } = await getSupabase().auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) throw new Error("Please sign in again.");
-  const form = new FormData();
-  form.append("file", file);
-  const r = await fetch("/api/biomarkers/extract", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error ?? `Request failed (${r.status})`);
-  return j as ReportExtractResult;
+/** Ask the server to read a lab report that is already uploaded to the private "lab-reports" bucket
+ *  (path "<user id>/<sha256>.<ext>"). Nothing is saved: the result must be reviewed first. */
+export function extractReport(path: string): Promise<ReportExtractResult> {
+  return post("/api/biomarkers/extract", { path });
+}
+
+/** Upload a lab report straight to private storage (not through our server, which has a ~4.5 MB body limit).
+ *  "created": this call stored the object; "existed": it was already there (e.g. belongs to a saved blood test). */
+export async function uploadLabReport(path: string, file: File): Promise<"created" | "existed"> {
+  const up = await getSupabase().storage.from("lab-reports").upload(path, file, { contentType: file.type, upsert: false });
+  const outcome = uploadOutcome(up.error as { message?: string; statusCode?: string } | null);
+  if (outcome === "failed") throw up.error;
+  return outcome;
+}
+
+/** Delete report objects this page created, except those in `keep` and any a saved blood test references.
+ *  If that check cannot be made, nothing is deleted. Errors are ignored: this is best-effort cleanup. */
+export async function removeUnusedLabReports(created: Iterable<string>, keep: ReadonlyArray<string | null | undefined> = []): Promise<string[]> {
+  const candidates = removableUploads(created, keep, []);
+  if (candidates.length === 0) return [];
+  const sb = getSupabase();
+  const { data, error } = await sb.from("blood_panels").select("report_path").in("report_path", candidates);
+  const doomed = removableUploads(candidates, keep, error || !data ? null : data.map((r) => r.report_path as string | null));
+  if (doomed.length === 0) return [];
+  const { error: rmError } = await sb.storage.from("lab-reports").remove(doomed);
+  return rmError ? [] : doomed;
 }

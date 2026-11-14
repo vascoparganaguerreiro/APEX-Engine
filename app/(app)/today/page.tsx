@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
+import { errMsg } from "@/lib/errors";
 import { addDays, readiness, trendSeries } from "@/lib/engine";
 import { dailyLoads } from "@/lib/activities";
 import { buildManualPatch, type MetricRow } from "@/lib/provenance";
@@ -9,8 +10,6 @@ import { todayIso } from "@/lib/dates";
 import type { DailyRow } from "@/lib/types";
 import TodayView from "@/components/TodayView";
 
-const errMsg = (e: unknown) =>
-  e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e);
 
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 

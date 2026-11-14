@@ -13,7 +13,7 @@ const files = (dir: string, exts: string[]) =>
   (readdirSync(join(root, dir), { recursive: true }) as string[])
     .map((f) => f.replace(/\\/g, "/")).filter((f) => !f.includes("node_modules") && exts.some((e) => f.endsWith(e))).map((f) => `${dir}/${f}`);
 
-const sql = stripSql(read("07_intervals_key_security.sql")).toLowerCase();
+const sql = stripSql(read("sql/07_intervals_key_security.sql")).toLowerCase();
 
 test("browser roles have no access to the encrypted credentials table", () => {
   assert.match(sql, /alter table public\.intervals_credentials enable row level security/);
@@ -33,7 +33,7 @@ test("browser roles can read only the non-secret connection columns and cannot w
 
 test("service-role and encryption secrets are server-only", () => {
   const ts = [...files("app", [".ts", ".tsx"]), ...files("lib", [".ts", ".tsx"]), ...files("components", [".ts", ".tsx"])];
-  const serverModules = /(serverConnections|serverAuth|connectionStore|\/crypto)["']/;
+  const serverModules = /(serverConnections|serverAuth|serverAiUsage|connectionStore|\/crypto)["']/;
   for (const f of ts) {
     const src = read(f);
     if (/^\s*["']use client["']/.test(src)) {
@@ -42,7 +42,7 @@ test("service-role and encryption secrets are server-only", () => {
     }
     if (/SERVICE_ROLE/.test(src)) assert.equal(f, "lib/serverConnections.ts", `${f}: only serverConnections may read the service role key`);
   }
-  for (const f of [".env.example", "env.example"]) assert.ok(!/NEXT_PUBLIC_\w*(SERVICE|ENCRYPTION)/.test(read(f)), `${f}: secrets must not be NEXT_PUBLIC_`);
+  for (const f of [".env.example"]) assert.ok(!/NEXT_PUBLIC_\w*(SERVICE|ENCRYPTION)/.test(read(f)), `${f}: secrets must not be NEXT_PUBLIC_`);
 });
 
 test("browser code never selects the key columns", () => {

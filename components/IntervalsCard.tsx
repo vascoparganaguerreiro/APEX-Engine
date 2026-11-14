@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
+import { errMsg } from "@/lib/errors";
 import { connectIntervals, disconnectIntervals, syncIntervals } from "@/lib/api";
 
 type Conn = { athlete_id: string; last_sync_at: string | null };
@@ -8,7 +9,6 @@ type Msg = { kind: "ok" | "error"; text: string } | null;
 type Busy = "connect" | "disconnect" | "sync" | null;
 
 const SYNC_DAYS = 120;
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e));
 
 export default function IntervalsCard() {
   const [conn, setConn] = useState<Conn | null | undefined>(undefined); // undefined = loading

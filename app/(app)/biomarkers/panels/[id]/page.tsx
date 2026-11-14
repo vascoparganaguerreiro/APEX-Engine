@@ -1,20 +1,18 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
-import { extractReport } from "@/lib/api";
+import { extractReport, removeUnusedLabReports, uploadLabReport } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { errMsg, loadPanels } from "@/lib/health/load";
-import { isUuid, normalizeMarker, rangeStatus, resultKey, reviewBlocked, seriesKey, validatePanelDate, validateResult, type Panel, type Result } from "@/lib/health/core";
+import { STATUS_CLASS, STATUS_TEXT, isUuid, normalizeMarker, rangeStatus, resultKey, reviewBlocked, seriesKey, validatePanelDate, validateResult, type Panel, type Result } from "@/lib/health/core";
+import { REPORT_EXT as EXT, REPORT_MAX_BYTES as MAX_BYTES, reportPath } from "@/lib/health/report";
 import ResultForm, { type ResultDraft } from "@/components/health/ResultForm";
 
-const EXT: Record<string, string> = { "application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
-const MAX_BYTES = 10 * 1024 * 1024;
-const STATUS_TEXT = { below: "Below lab range", within: "Within lab range", above: "Above lab range", unknown: "No range printed" } as const;
-const STATUS_CLASS = { below: "st-low", within: "st-ok", above: "st-high", unknown: "st-na" } as const;
 interface Pending { draft: ResultDraft; include: boolean; source: "manual" | "document" }
+interface Picked { f: File; sha: string; path: string }
 
 async function sha256Hex(file: File): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
@@ -33,7 +31,7 @@ export default function PanelPage() {
   const [results, setResults] = useState<Result[]>([]);
   const [pending, setPending] = useState<Pending[]>([]);
   const [editRow, setEditRow] = useState<string | number | null>(null);
-  const [file, setFile] = useState<{ f: File; sha: string } | null>(null);
+  const [file, setFile] = useState<Picked | null>(null);
   const [consent, setConsent] = useState(false);
   const [checked, setChecked] = useState(false);
   const [reading, setReading] = useState(false);
@@ -44,6 +42,34 @@ export default function PanelPage() {
   const [busy, setBusy] = useState(false);
   const [sameDay, setSameDay] = useState<string[]>([]);      // existing tests on the chosen date (soft duplicate warning)
   const validId = isNew || isUuid(id);
+
+  // Uploaded report objects. The browser uploads straight to private storage ("<uid>/<sha256>.<ext>") before reading,
+  // so the same object is reused when saving. Only objects this page created itself are ever cleaned up; one that
+  // already existed may belong to a saved blood test, and one a saved test references is never removed.
+  const created = useRef(new Set<string>());     // objects this page stored itself
+  const stored = useRef(new Set<string>());      // objects known to be in storage (created here or already there)
+  const current = useRef<string | null>(null);   // path of the file currently selected (null: none / page left)
+  const cleaning = useRef<Promise<void>>(Promise.resolve());
+
+  /** Remove objects this page created that are no longer wanted. Keeps the selected file unless it is `drop`.
+   *  Runs one at a time, and uploads wait for it, so a removal never races a re-upload of the same file. */
+  const cleanup = useCallback((drop?: string) => {
+    const run = async () => {
+      const keep = current.current === drop ? [] : [current.current];
+      const removed = await removeUnusedLabReports(created.current, keep).catch(() => [] as string[]);
+      for (const p of removed) { created.current.delete(p); stored.current.delete(p); }
+    };
+    cleaning.current = cleaning.current.then(run, run);
+    return cleaning.current;
+  }, []);
+  async function ensureUploaded(p: Picked) {
+    await cleaning.current;
+    if (stored.current.has(p.path)) return;
+    if ((await uploadLabReport(p.path, p.f)) === "created") created.current.add(p.path);
+    stored.current.add(p.path);
+  }
+  // Leaving the page within the app removes an unsaved upload. (Closing the tab or reloading cannot be covered reliably.)
+  useEffect(() => () => { current.current = null; void cleanup(); }, [cleanup]);
 
   const load = useCallback(async () => {
     if (isNew) return;
@@ -68,24 +94,37 @@ export default function PanelPage() {
     // A different file invalidates anything read from the previous one and the consent given for it.
     setError(null); setDup(null); setInfo(null); setConsent(false); setChecked(false);
     setPending((p) => p.filter((x) => x.source !== "document")); setEditRow(null);
-    if (!f) { setFile(null); return; }
-    if (!EXT[f.type]) { setFile(null); setError("Only PDF, PNG, JPEG or WebP files are supported."); return; }
-    if (f.size > MAX_BYTES) { setFile(null); setError("The file is larger than 10 MB."); return; }
-    try { setFile({ f, sha: await sha256Hex(f) }); }
-    catch { setFile(null); setError("This browser could not prepare the file (a secure https connection is required)."); }
+    current.current = null;
+    const next = await prepare(f);
+    current.current = next?.path ?? null; setFile(next);
+    void cleanup();                                  // an upload of the previous file is no longer needed
+  }
+  async function prepare(f: File | undefined): Promise<Picked | null> {
+    if (!f) return null;
+    if (!EXT[f.type]) { setError("Only PDF, PNG, JPEG or WebP files are supported."); return null; }
+    if (f.size > MAX_BYTES) { setError("The file is larger than 10 MB."); return null; }
+    let sha: string;
+    try { sha = await sha256Hex(f); }
+    catch { setError("This browser could not prepare the file (a secure https connection is required)."); return null; }
+    const path = session ? reportPath(session.user.id, sha, f.type) : null;
+    if (!path) { setError("Please sign in again."); return null; }
+    return { f, sha, path };
   }
   async function read() {
     if (!file) return;
+    const path = file.path;
     setReading(true); setError(null); setDup(null);
     try {
-      const r = await extractReport(file.f);
-      if (r.duplicate) { setDup(r.duplicate); return; }
+      await ensureUploaded(file);
+      const r = await extractReport(path);
+      if (current.current !== path) { void cleanup(); return; }   // another file was picked meanwhile
+      if (r.duplicate) { setDup(r.duplicate); void cleanup(path); return; }
       const x = r.extraction!;
       setMeta((m) => ({ ...m, date: x.collected_on ?? m.date, lab: m.lab || x.lab_name || "" }));
       setPending(x.results.map((e) => ({ draft: { original_name: e.original_name, value: e.value, unit: e.unit, ref_low: e.ref_low, ref_high: e.ref_high, flag: e.flag }, include: true, source: "document" })));
       setInfo({ skipped: x.skipped, fromDoc: true }); setChecked(false);
       if (!x.collected_on) setError("The collection date could not be read. Check the date below before saving.");
-    } catch (e) { setError(errMsg(e)); } finally { setReading(false); }
+    } catch (e) { if (current.current === path) setError(errMsg(e)); else void cleanup(); } finally { setReading(false); }
   }
 
   // ------------------------------------------------------------ create
@@ -100,23 +139,18 @@ export default function PanelPage() {
     if (reviewBlocked(rows, checked)) { setError("Confirm that you checked the extracted values against the original report."); return; }
     setBusy(true);
     const sb = getSupabase();
-    let uploaded: string | null = null;
+    const path = file?.path ?? null;
     try {
-      let path: string | null = null;
-      if (file) {
-        path = `${session!.user.id}/${file.sha}.${EXT[file.f.type]}`;
-        const up = await sb.storage.from("lab-reports").upload(path, file.f, { contentType: file.f.type, upsert: false });
-        if (up.error && !/already exists|Duplicate/i.test(up.error.message)) throw up.error;
-        if (!up.error) uploaded = path;
-      }
+      if (file) await ensureUploaded(file);         // reuses the object uploaded for reading, if any
       const { data, error: e } = await sb.rpc("save_blood_panel", {
         p_panel: { collected_on: meta.date, lab_name: meta.lab, notes: meta.notes, source: rows.some((r) => r.source === "document") ? "document" : "manual", report_path: path, report_filename: file?.f.name.slice(0, 200) ?? null, report_sha256: file?.sha ?? null },
         p_results: rows.map((r) => ({ ...toRow(r.draft), source: r.source })),
       });
       if (e) throw e;
+      if (path) created.current.delete(path);       // now referenced by the saved blood test: never clean it up
       router.push(`/biomarkers/panels/${data as string}`);
     } catch (e) {
-      if (uploaded) await sb.storage.from("lab-reports").remove([uploaded]);   // no orphaned file after a failed save
+      if (path) await cleanup(path);                // no orphaned file after a failed save (only if this page uploaded it)
       setError(dbError(e)); setBusy(false);
     }
   }
@@ -158,10 +192,9 @@ export default function PanelPage() {
     let uploaded: string | null = null;
     try {
       const sha = await sha256Hex(f);
-      const path = `${session!.user.id}/${sha}.${EXT[f.type]}`;
-      const up = await sb.storage.from("lab-reports").upload(path, f, { contentType: f.type, upsert: false });
-      if (up.error && !/already exists|Duplicate/i.test(up.error.message)) throw up.error;
-      if (!up.error) uploaded = path;
+      const path = session ? reportPath(session.user.id, sha, f.type) : null;
+      if (!path) throw new Error("Please sign in again.");
+      if ((await uploadLabReport(path, f)) === "created") uploaded = path;
       const { error: e } = await sb.from("blood_panels").update({ report_path: path, report_filename: f.name.slice(0, 200), report_sha256: sha }).eq("id", id);
       if (e) throw e;
       setOk("Report attached."); await load();

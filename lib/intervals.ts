@@ -46,6 +46,14 @@ export interface ActivityRow {
   duration_s: number | null; distance_m: number | null; avg_hr: number | null; load: number | null;
 }
 
+/** The unique key activities are deduplicated on (created by 05_intervals.sql). */
+export const ACTIVITY_CONFLICT = "user_id,source,external_id";
+
+/** Rows for the activities upsert. The owner and the source are set last, so nothing in a mapped row can override them. */
+export function activityUpsertRows(acts: ReadonlyArray<ActivityRow>, uid: string): Array<ActivityRow & { user_id: string }> {
+  return acts.map((a) => ({ ...a, user_id: uid, source: "intervals" as const }));
+}
+
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
 
 export function mapSport(type: unknown): string {

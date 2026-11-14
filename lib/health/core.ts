@@ -1,6 +1,8 @@
-// Pure logic for supplements, blood biomarkers and the unified timeline. No imports (unit-testable).
+// Pure logic for supplements, blood biomarkers and the unified timeline. Pure functions (unit-testable).
 // Dates are ISO strings "YYYY-MM-DD". Nothing here invents data: values, units and ranges are always the
 // laboratory's own; observations describe timing only and never claim cause or give advice.
+
+import { addDays as addDay } from "../dates.ts";
 
 // ------------------------------------------------------------------ types
 export type Slot = "morning" | "lunch" | "dinner";
@@ -33,10 +35,7 @@ export const isIsoDate = (s: unknown): s is string => {
   const t = new Date(Date.UTC(y, m - 1, d));
   return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
 };
-export const addDay = (day: string, n: number): string => {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
-};
+export { addDay };
 /** ISO weekday: 1 = Monday ... 7 = Sunday. */
 export const isoWeekday = (day: string): number => {
   const [y, m, d] = day.split("-").map(Number);
@@ -158,6 +157,9 @@ export const seriesLabel = (key: string, fallbackName: string) => LABELS.get(key
 export const unitKey = (u: string) => u.toLowerCase().replace(/[µμ]/g, "u").replace(/\s+/g, "");
 
 export type RangeStatus = "below" | "within" | "above" | "unknown";
+/** Wording and CSS class for each status, shared by every page that shows a result. */
+export const STATUS_TEXT: Readonly<Record<RangeStatus, string>> = { below: "Below lab range", within: "Within lab range", above: "Above lab range", unknown: "No range printed" };
+export const STATUS_CLASS: Readonly<Record<RangeStatus, string>> = { below: "st-low", within: "st-ok", above: "st-high", unknown: "st-na" };
 /** Status against THAT result's own laboratory range. No range printed (or none usable) means unknown. */
 export function rangeStatus(value: number, low: number | null, high: number | null): RangeStatus {
   if (low === null && high === null) return "unknown";

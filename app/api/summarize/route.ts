@@ -1,10 +1,13 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { addDays, daysBetween, loadSeries, tsbState } from "@/lib/engine";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { addDays, loadSeries, tsbState } from "@/lib/engine";
 import { addDaysIso, localDay, paceLabel, weekStart as mondayOf, weekTotals, type Activity, type WeekTotals } from "@/lib/activities";
 import {
-  buildActivityPrompt, buildWeekPrompt, extractText, rankModels, SUMMARY_SYSTEM,
+  buildActivityPrompt, buildWeekPrompt, extractText, nextRace, SUMMARY_SYSTEM,
   type Brief, type LoadState,
 } from "@/lib/summary";
+import { AiUsageError, withAiUsage } from "@/lib/serverAiUsage";
+import { GeminiListError, geminiHeaders, generateUrl, isModelName, listRankedModels } from "@/lib/gemini";
+import { AuthError, authUser } from "@/lib/serverAuth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -13,7 +16,6 @@ class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-const DAILY_LIMIT = Number(process.env.SUMMARY_DAILY_LIMIT ?? 30);
 const COLS = "id,started_at,sport,title,duration_s,distance_m,avg_hr,load,note";
 type Row = {
   id: number; started_at: string; sport: string; title: string | null; duration_s: number | null;
@@ -24,17 +26,15 @@ let cachedModel: string | null = null;
 
 // ------------------------------------------------------------------ Gemini
 async function listModels(key: string): Promise<string[]> {
-  const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", { headers: { "x-goog-api-key": key } });
-  if (!r.ok) throw new HttpError(r.status, `model list ${r.status}`);
-  const j = (await r.json()) as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> };
-  return rankModels(j.models ?? []);
+  try { return await listRankedModels(key); }
+  catch (e) { throw new HttpError(e instanceof GeminiListError ? e.status : 502, "model list failed"); }
 }
 
 async function generate(key: string, model: string, prompt: string): Promise<string> {
-  if (!/^[a-z0-9.\-]+$/.test(model)) throw new HttpError(404, "bad model name");
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+  if (!isModelName(model)) throw new HttpError(404, "bad model name");
+  const r = await fetch(generateUrl(model), {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    headers: geminiHeaders(key),
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: SUMMARY_SYSTEM }] },
       contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -79,27 +79,6 @@ async function ask(prompt: string): Promise<{ text: string; model: string }> {
 }
 
 // ---------------------------------------------------------------- Supabase
-function userClient(token: string): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL, key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) throw new HttpError(500, "The server is missing the Supabase settings.");
-  return createClient(url, key, {
-    global: { headers: { Authorization: `Bearer ${token}` } },       // row-level security applies as this user
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
-
-async function enforceLimit(sb: SupabaseClient) {
-  const start = new Date(); start.setUTCHours(0, 0, 0, 0);
-  const iso = start.toISOString();
-  const [a, w] = await Promise.all([
-    sb.from("activities").select("id", { count: "exact", head: true }).gte("ai_summary_at", iso),
-    sb.from("weekly_summaries").select("week_start", { count: "exact", head: true }).gte("created_at", iso),
-  ]);
-  if ((a.count ?? 0) + (w.count ?? 0) >= DAILY_LIMIT) {
-    throw new HttpError(429, `Daily limit of ${DAILY_LIMIT} summaries reached. Try again tomorrow.`);
-  }
-}
-
 const avg = (xs: Array<number | null | undefined>) => {
   const v = xs.filter((x): x is number => x !== null && x !== undefined).map(Number);
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
@@ -123,12 +102,12 @@ async function context(sb: SupabaseClient, uid: string, endDay: string, rowsFrom
   const [prof, rows, race] = await Promise.all([
     sb.from("profiles").select("timezone").eq("id", uid).maybeSingle(),
     sb.from("activities").select(COLS).gte("started_at", `${rowsFromDay}T00:00:00Z`).lte("started_at", `${addDays(endDay, 1)}T23:59:59Z`).order("started_at"),
-    sb.from("races").select("name,race_date").gte("race_date", endDay).order("race_date").limit(1),
+    // "Next race" is relative to today, not to the summarised day. One day of slack covers every time zone.
+    sb.from("races").select("name,race_date").gte("race_date", addDays(new Date().toISOString().slice(0, 10), -1)).order("race_date").limit(5),
   ]);
   const tz: string = prof.data?.timezone ?? "UTC";
   const today = localDay(new Date().toISOString(), tz);
-  const r = race.data?.[0];
-  return { tz, today, rows: (rows.data ?? []) as Row[], race: r ? { name: String(r.name), days: daysBetween(today, r.race_date) } : null };
+  return { tz, today, rows: (rows.data ?? []) as Row[], race: nextRace(race.data ?? [], today) };
 }
 
 async function dailyAvg(sb: SupabaseClient, from: string, to: string) {
@@ -190,22 +169,25 @@ async function summarizeWeek(sb: SupabaseClient, uid: string, anyDay: string) {
 }
 
 // ------------------------------------------------------------------ handler
+type Job = { kind: "activity"; id: number } | { kind: "week"; weekStart: string };
+
+function parseBody(body: unknown): Job {
+  const b = (body && typeof body === "object" ? body : {}) as { kind?: unknown; id?: unknown; weekStart?: unknown };
+  if (b.kind === "activity" && typeof b.id === "number" && Number.isSafeInteger(b.id)) return { kind: "activity", id: b.id };
+  if (b.kind === "week" && typeof b.weekStart === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.weekStart)) return { kind: "week", weekStart: b.weekStart };
+  throw new HttpError(400, "Bad request.");
+}
+
 export async function POST(req: Request) {
   try {
-    const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-    if (!token) throw new HttpError(401, "Please sign in again.");
-    const sb = userClient(token);
-    const { data: u, error: ue } = await sb.auth.getUser(token);
-    if (ue || !u.user) throw new HttpError(401, "Please sign in again.");
-    const body = (await req.json().catch(() => null)) as { kind?: string; id?: number; weekStart?: string } | null;
-    await enforceLimit(sb);
-    if (body?.kind === "activity" && Number.isInteger(body.id)) return Response.json(await summarizeActivity(sb, u.user.id, body.id as number));
-    if (body?.kind === "week" && typeof body.weekStart === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.weekStart)) {
-      return Response.json(await summarizeWeek(sb, u.user.id, body.weekStart));
-    }
-    throw new HttpError(400, "Bad request.");
+    const { sb, uid } = await authUser(req);                            // uid only ever from the verified token; RLS applies to sb
+    const job = parseBody(await req.json().catch(() => null));          // bad input is rejected before anything is charged
+    // One unit of the daily allowance per AI call (regenerating the same item counts again). The unit is given
+    // back if anything below fails (not found, Gemini error, save error), so users are not charged for failures.
+    return Response.json(await withAiUsage(uid, "summary", () =>
+      job.kind === "activity" ? summarizeActivity(sb, uid, job.id) : summarizeWeek(sb, uid, job.weekStart)));
   } catch (e) {
-    if (e instanceof HttpError) return Response.json({ error: e.message }, { status: e.status });
+    if (e instanceof HttpError || e instanceof AiUsageError || e instanceof AuthError) return Response.json({ error: e.message }, { status: e.status });
     console.error(e);
     return Response.json({ error: "Something went wrong." }, { status: 500 });
   }

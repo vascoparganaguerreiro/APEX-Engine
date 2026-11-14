@@ -2,13 +2,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
+import { errMsg } from "@/lib/errors";
 import { todayIso } from "@/lib/dates";
 import {
   SLOT_LABEL, WEEKDAYS, addDay, adherence, dueOn, isIsoDate, type Intake, type Schedule, type Supplement,
 } from "@/lib/health/core";
 import SupplementForm, { slotRows, slotsFrom, type SlotDrafts } from "@/components/health/SupplementForm";
 
-const errMsg = (e: unknown) => (e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e));
 interface Revision { id: string; changed_at: string; snapshot: Partial<Supplement> }
 
 export default function SupplementsPage() {

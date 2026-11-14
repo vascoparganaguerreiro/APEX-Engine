@@ -1,4 +1,5 @@
-// Activity helpers: formatting, weeks and totals. Pure functions, no imports.
+// Activity helpers: formatting, weeks and totals. Pure functions.
+import { addDays as addDaysIso } from "./dates.ts";
 
 export interface Activity {
   id: number;
@@ -57,10 +58,7 @@ export function localDay(iso: string, timeZone?: string): string {
   }
 }
 
-export function addDaysIso(day: string, n: number): string {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
-}
+export { addDaysIso };
 
 /** The Monday of the week that contains `day`. */
 export function weekStart(day: string): string {

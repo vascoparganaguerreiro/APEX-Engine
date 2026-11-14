@@ -9,6 +9,9 @@ function admin() {
   if (!url || !key) throw new store.ConnectionError(500, "The server is missing SUPABASE_SERVICE_ROLE_KEY.");
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
+/** Service-role client (bypasses RLS) for other server-only modules such as lib/serverAiUsage.ts, so the key is
+ *  still read only in this file. Every query made with it must be scoped by a server-verified uid. */
+export const serviceClient = admin;
 
 const ops: store.CryptoOps = {
   encrypt: (plain, aad) => encryptSecret(plain, aad),
