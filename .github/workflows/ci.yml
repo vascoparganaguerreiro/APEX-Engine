@@ -10,6 +10,8 @@ permissions:
 
 jobs:
   check:
+    # This exact name is the status check that the branch rules on main require.
+    name: Test, typecheck and build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
