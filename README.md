@@ -10,7 +10,8 @@ Next.js + TypeScript on Vercel, with Supabase for login and data (same database 
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the publishable key)
 4. (For the AI summaries) also add this **server-only** variable, with no `NEXT_PUBLIC_` prefix:
    - `GEMINI_API_KEY` = your Google AI Studio key
-   Optional: `GEMINI_MODEL` (force a model) and `SUMMARY_DAILY_LIMIT` (summaries per user per day, default 30).
+   - `SUPABASE_SERVICE_ROLE_KEY` = the Supabase service_role key (the daily AI limits are recorded server-side with it; without it the AI features return an error instead of running unlimited)
+   Optional: `GEMINI_MODEL` (force a model), `SUMMARY_DAILY_LIMIT` (summaries per user per day, default 30) and `REPORT_DAILY_LIMIT` (lab report readings per user per day, default 10). Limits reset at 00:00 UTC; an invalid value uses the default and 0 turns the feature off.
 5. Deploy. Open the address Vercel gives you and sign in with your existing APEX account.
 
 ## Run locally (optional, needs Node.js 20.9+)
@@ -25,6 +26,8 @@ npm test                     # engine tests (Node 22+)
 The SQL files live in the repository root and are run by hand in the Supabase SQL Editor, in number order.
 
 **Existing production database** (shared with the Streamlit app): its base tables already exist. Do **not** run `00_base_schema.sql` there. Run `05_intervals.sql`, `06_metric_provenance.sql` and `07_intervals_key_security.sql`, in that order, before deploying the Intervals.icu code. Add the server-only variables INTERVALS_ENCRYPTION_KEY and SUPABASE_SERVICE_ROLE_KEY (see .env.example).
+
+**AI usage limits** (all databases): run `09_ai_usage.sql` after `07_intervals_key_security.sql` and before deploying the code that uses it. It creates the server-only `ai_usage_events` table and the `consume_ai_usage` function that enforce the per-user daily limits for AI summaries and lab report reading.
 
 **New or staging database**: run `00_base_schema.sql` first, then `05_intervals.sql`, `06_metric_provenance.sql`, `07_intervals_key_security.sql` (and optionally `08_supplements_biomarkers.sql`).
 Caveat: migrations 01–04 (which created the base tables, including activity notes, AI summaries and weekly summaries) were never committed here. `00_base_schema.sql` is a **reconstruction** from how this code uses the database, not a copy of production: types and defaults marked `GUESS` may differ. It refuses to run if its tables already exist. Whoever has production access should replace it with a real dump, e.g. `supabase db dump --db-url "$PROD_DB_URL" --schema public` or `pg_dump --schema-only --schema=public "$PROD_DB_URL"`.
