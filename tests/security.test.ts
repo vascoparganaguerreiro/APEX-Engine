@@ -33,7 +33,7 @@ test("browser roles can read only the non-secret connection columns and cannot w
 
 test("service-role and encryption secrets are server-only", () => {
   const ts = [...files("app", [".ts", ".tsx"]), ...files("lib", [".ts", ".tsx"]), ...files("components", [".ts", ".tsx"])];
-  const serverModules = /(serverConnections|serverAuth|connectionStore|\/crypto)["']/;
+  const serverModules = /(serverConnections|serverAuth|serverAiUsage|connectionStore|\/crypto)["']/;
   for (const f of ts) {
     const src = read(f);
     if (/^\s*["']use client["']/.test(src)) {

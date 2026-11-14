@@ -5,6 +5,7 @@ import {
   buildActivityPrompt, buildWeekPrompt, extractText, rankModels, SUMMARY_SYSTEM,
   type Brief, type LoadState,
 } from "@/lib/summary";
+import { AiUsageError, withAiUsage } from "@/lib/serverAiUsage";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -13,7 +14,6 @@ class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-const DAILY_LIMIT = Number(process.env.SUMMARY_DAILY_LIMIT ?? 30);
 const COLS = "id,started_at,sport,title,duration_s,distance_m,avg_hr,load,note";
 type Row = {
   id: number; started_at: string; sport: string; title: string | null; duration_s: number | null;
@@ -86,18 +86,6 @@ function userClient(token: string): SupabaseClient {
     global: { headers: { Authorization: `Bearer ${token}` } },       // row-level security applies as this user
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-async function enforceLimit(sb: SupabaseClient) {
-  const start = new Date(); start.setUTCHours(0, 0, 0, 0);
-  const iso = start.toISOString();
-  const [a, w] = await Promise.all([
-    sb.from("activities").select("id", { count: "exact", head: true }).gte("ai_summary_at", iso),
-    sb.from("weekly_summaries").select("week_start", { count: "exact", head: true }).gte("created_at", iso),
-  ]);
-  if ((a.count ?? 0) + (w.count ?? 0) >= DAILY_LIMIT) {
-    throw new HttpError(429, `Daily limit of ${DAILY_LIMIT} summaries reached. Try again tomorrow.`);
-  }
 }
 
 const avg = (xs: Array<number | null | undefined>) => {
@@ -190,6 +178,15 @@ async function summarizeWeek(sb: SupabaseClient, uid: string, anyDay: string) {
 }
 
 // ------------------------------------------------------------------ handler
+type Job = { kind: "activity"; id: number } | { kind: "week"; weekStart: string };
+
+function parseBody(body: unknown): Job {
+  const b = (body && typeof body === "object" ? body : {}) as { kind?: unknown; id?: unknown; weekStart?: unknown };
+  if (b.kind === "activity" && typeof b.id === "number" && Number.isSafeInteger(b.id)) return { kind: "activity", id: b.id };
+  if (b.kind === "week" && typeof b.weekStart === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.weekStart)) return { kind: "week", weekStart: b.weekStart };
+  throw new HttpError(400, "Bad request.");
+}
+
 export async function POST(req: Request) {
   try {
     const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
@@ -197,15 +194,14 @@ export async function POST(req: Request) {
     const sb = userClient(token);
     const { data: u, error: ue } = await sb.auth.getUser(token);
     if (ue || !u.user) throw new HttpError(401, "Please sign in again.");
-    const body = (await req.json().catch(() => null)) as { kind?: string; id?: number; weekStart?: string } | null;
-    await enforceLimit(sb);
-    if (body?.kind === "activity" && Number.isInteger(body.id)) return Response.json(await summarizeActivity(sb, u.user.id, body.id as number));
-    if (body?.kind === "week" && typeof body.weekStart === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.weekStart)) {
-      return Response.json(await summarizeWeek(sb, u.user.id, body.weekStart));
-    }
-    throw new HttpError(400, "Bad request.");
+    const uid = u.user.id;                                              // only ever from the verified token
+    const job = parseBody(await req.json().catch(() => null));          // bad input is rejected before anything is charged
+    // One unit of the daily allowance per AI call (regenerating the same item counts again). The unit is given
+    // back if anything below fails (not found, Gemini error, save error), so users are not charged for failures.
+    return Response.json(await withAiUsage(uid, "summary", () =>
+      job.kind === "activity" ? summarizeActivity(sb, uid, job.id) : summarizeWeek(sb, uid, job.weekStart)));
   } catch (e) {
-    if (e instanceof HttpError) return Response.json({ error: e.message }, { status: e.status });
+    if (e instanceof HttpError || e instanceof AiUsageError) return Response.json({ error: e.message }, { status: e.status });
     console.error(e);
     return Response.json({ error: "Something went wrong." }, { status: 500 });
   }
