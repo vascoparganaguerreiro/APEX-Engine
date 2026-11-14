@@ -14,16 +14,17 @@ Next.js + TypeScript on Vercel, with Supabase for login and data (same database 
    Optional: `GEMINI_MODEL` (force a model), `SUMMARY_DAILY_LIMIT` (summaries per user per day, default 30) and `REPORT_DAILY_LIMIT` (lab report readings per user per day, default 10). Limits reset at 00:00 UTC; an invalid value uses the default and 0 turns the feature off.
 5. Deploy. Open the address Vercel gives you and sign in with your existing APEX account.
 
-## Run locally (optional, needs Node.js 20.9+)
+## Run locally (optional, needs Node.js 22+)
 ```
 npm install
 cp .env.example .env.local   # then fill in the two values
 npm run dev
-npm test                     # engine tests (Node 22+)
+npm test                     # unit tests
+npm run lint                 # ESLint
 ```
 
 ## Database
-The SQL files live in the repository root and are run by hand in the Supabase SQL Editor, in number order.
+The SQL files live in the `sql/` folder and are run by hand in the Supabase SQL Editor, in number order.
 
 **Existing production database** (shared with the Streamlit app): its base tables already exist. Do **not** run `00_base_schema.sql` there. Run `05_intervals.sql`, `06_metric_provenance.sql` and `07_intervals_key_security.sql`, in that order, before deploying the Intervals.icu code. Add the server-only variables INTERVALS_ENCRYPTION_KEY and SUPABASE_SERVICE_ROLE_KEY (see .env.example).
 

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { authUser, errorResponse } from "@/lib/serverAuth";
-import { extractText, rankModels } from "@/lib/summary";
+import { extractText } from "@/lib/summary";
+import { geminiHeaders, generateUrl, isModelName, listRankedModels } from "@/lib/gemini";
 import { EXTRACTION_PROMPT, parseExtraction } from "@/lib/health/core";
 import { REPORT_MAX_BYTES, isMissingObject, parseReportPath, refundsReading, type ReadingOutcome } from "@/lib/health/report";
 import { AiLimitError, AiUsageError, consumeAiUsage, releaseAiUsage } from "@/lib/serverAiUsage";
@@ -27,22 +28,20 @@ function sniff(b: Buffer): string | null {
 async function models(key: string): Promise<string[]> {
   if (process.env.GEMINI_MODEL) return [process.env.GEMINI_MODEL];
   if (cachedModels) return cachedModels;
-  const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", { headers: { "x-goog-api-key": key } });
-  if (!r.ok) throw new ExtractError(502, "The AI service is not reachable.", "no_answer");
-  const j = (await r.json()) as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> };
-  cachedModels = rankModels(j.models ?? []).slice(0, 3);
+  try { cachedModels = (await listRankedModels(key)).slice(0, 3); }
+  catch { throw new ExtractError(502, "The AI service is not reachable.", "no_answer"); }
   return cachedModels;
 }
 
 async function readReport(key: string, mime: string, data: Buffer): Promise<unknown> {
   let last = 502;
   for (const model of await models(key)) {
-    if (!/^[a-z0-9.\-]+$/.test(model)) continue;
+    if (!isModelName(model)) continue;
     let r: Response;
     try {
-      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      r = await fetch(generateUrl(model), {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      headers: geminiHeaders(key),
       signal: AbortSignal.timeout(50_000),
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: EXTRACTION_PROMPT }, { inline_data: { mime_type: mime, data: data.toString("base64") } }] }],

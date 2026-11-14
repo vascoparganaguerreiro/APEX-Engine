@@ -1,5 +1,6 @@
 // APEX engine: pure functions (no React, no Supabase). A faithful port of engine.py.
 // Dates are ISO strings "YYYY-MM-DD" so there are no time-zone surprises.
+import { addDays, daysBetween } from "./dates.ts";
 
 export type Verdict = "PUSH" | "HOLD" | "RECOVER";
 export interface Readiness {
@@ -104,14 +105,7 @@ export function tsbState(tsb: number): string {
   return "Overtraining risk";
 }
 
-export function addDays(iso: string, n: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
-}
-export const daysBetween = (a: string, b: string) => {
-  const t = (s: string) => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); };
-  return Math.round((t(b) - t(a)) / 86_400_000);
-};
+export { addDays, daysBetween };
 
 /** (day, load, CTL, ATL, TSB) for every day from start to end; rest days count as 0. */
 export function loadSeries(daily: Record<string, number>, start: string, end: string) {

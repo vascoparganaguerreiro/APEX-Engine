@@ -1,4 +1,5 @@
-// Prompts and Gemini helpers for the training summaries. Pure functions, no imports.
+// Prompts and Gemini helpers for the training summaries. Pure functions.
+import { daysBetween } from "./dates.ts";
 
 export const SUMMARY_SYSTEM = `You are APEX, a sports-science assistant writing a short training summary for ONE endurance athlete about their own data.
 
@@ -25,8 +26,6 @@ const loadLine = (l: LoadState | null) =>
 const raceLine = (r: RaceInfo | null) =>
   !r ? "Next race: none registered" : `Next race: ${r.name} ${r.days === 0 ? "today" : r.days === 1 ? "in 1 day" : `in ${r.days} days`}`;
 
-const dayNumber = (iso: string) => { const [y, m, d] = iso.split("-").map(Number); return Date.UTC(y, m - 1, d) / 86_400_000; };
-
 /** The first race on or after `today` (both "YYYY-MM-DD"), counted from today. Races that are already over are
  *  never "next", whatever day the summarised session or week was on. */
 export function nextRace(races: ReadonlyArray<{ name?: unknown; race_date?: unknown }>, today: string): RaceInfo | null {
@@ -36,7 +35,7 @@ export function nextRace(races: ReadonlyArray<{ name?: unknown; race_date?: unkn
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < today) continue;
     if (!best || date < best.date) best = { name: String(r.name ?? "Race"), date };
   }
-  return best ? { name: best.name, days: Math.round(dayNumber(best.date) - dayNumber(today)) } : null;
+  return best ? { name: best.name, days: daysBetween(today, best.date) } : null;
 }
 const briefLine = (b: Brief) =>
   `${b.day} ${b.sport}${b.title ? ` "${b.title}"` : ""}: ${b.minutes} min` +

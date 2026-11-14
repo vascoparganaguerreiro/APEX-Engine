@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/useAuth";
+import { errMsg } from "@/lib/errors";
 import { summarize } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import {
@@ -12,8 +13,6 @@ import ActivityCard from "@/components/ActivityCard";
 import WeekCard from "@/components/WeekCard";
 
 const COLS = "id,started_at,sport,title,duration_s,distance_m,avg_hr,load,note,ai_summary,ai_summary_at";
-const errMsg = (e: unknown) =>
-  e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e);
 
 export default function ActivitiesPage() {
   const { session } = useAuth();

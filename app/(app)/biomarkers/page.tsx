@@ -3,10 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/useAuth";
 import { errMsg, loadPanels, loadResults } from "@/lib/health/load";
-import { rangeStatus, seriesKey, seriesLabel, splitByUnit, change, type Panel, type ResultPoint } from "@/lib/health/core";
+import { STATUS_CLASS, STATUS_TEXT, rangeStatus, seriesKey, seriesLabel, splitByUnit, change, type Panel, type ResultPoint } from "@/lib/health/core";
 
-const STATUS_TEXT = { below: "Below lab range", within: "Within lab range", above: "Above lab range", unknown: "No range printed" } as const;
-const STATUS_CLASS = { below: "st-low", within: "st-ok", above: "st-high", unknown: "st-na" } as const;
 
 export default function BiomarkersPage() {
   const { session } = useAuth();

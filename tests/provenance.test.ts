@@ -98,7 +98,7 @@ test("concurrent manual edit and sync: a manual value wins in either commit orde
 
 test("the SQL functions encode the same rules (static check of 06_metric_provenance.sql)", async () => {
   const { readFileSync } = await import("node:fs");
-  const sql = readFileSync(new URL("../06_metric_provenance.sql", import.meta.url), "utf8");
+  const sql = readFileSync(new URL("../sql/06_metric_provenance.sql", import.meta.url), "utf8");
   assert.match(sql, /apply_synced_metrics/);
   assert.match(sql, /d\.hrv_ms is null or d\.hrv_source = 'intervals'/);
   assert.match(sql, /legacy_unknown/);

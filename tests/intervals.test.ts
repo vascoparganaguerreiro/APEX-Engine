@@ -59,13 +59,12 @@ test("fetchAthlete maps failures to IntervalsError", async () => {
   await assert.rejects(fetchAthlete("i1", "abcdEFGH1234", down), (e: IntervalsError) => e.status === 502);
 });
 
-test("activity sync: every imported row is labelled source=intervals and deduplicated on (user_id, source, external_id)", async () => {
-  const { readFileSync } = await import("node:fs");
-  assert.equal(mapActivity({ id: 7, start_date: "2026-11-09T08:00:00Z", type: "Ride" })?.source, "intervals");
-  const route = readFileSync(new URL("../app/api/intervals/sync/route.ts", import.meta.url), "utf8");
-  assert.match(route, /onConflict: "user_id,source,external_id"/);
-  assert.ok(!/onConflict: "user_id,external_id"/.test(route), "the old conflict target does not match production's unique key");
-  assert.match(route, /source: "intervals"/);
-  const upsert = route.match(/from\("activities"\)\.upsert\([^;]*;/)?.[0] ?? "";
-  assert.ok(upsert.indexOf("...a") < upsert.indexOf('source: "intervals"'), "source is set after the spread so it cannot be overridden");
+test("activity sync: every imported row belongs to the caller, is labelled source=intervals and is deduplicated per source", async () => {
+  const { ACTIVITY_CONFLICT, activityUpsertRows } = await import("../lib/intervals.ts");
+  const mapped = mapActivity({ id: 7, start_date: "2026-11-09T08:00:00Z", type: "Ride" })!;
+  assert.equal(mapped.source, "intervals");
+  // Even a row that somehow carried another owner or source is written as the caller's Intervals row.
+  const forged = { ...mapped, user_id: "someone-else", source: "strava" } as unknown as typeof mapped;
+  assert.deepEqual(activityUpsertRows([mapped, forged], "me").map((r) => [r.user_id, r.source, r.external_id]), [["me", "intervals", "7"], ["me", "intervals", "7"]]);
+  assert.equal(ACTIVITY_CONFLICT, "user_id,source,external_id", "must match the unique key that 05_intervals.sql creates");
 });

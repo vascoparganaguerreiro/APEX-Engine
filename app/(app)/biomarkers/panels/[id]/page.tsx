@@ -7,12 +7,10 @@ import { useAuth } from "@/lib/useAuth";
 import { extractReport, removeUnusedLabReports, uploadLabReport } from "@/lib/api";
 import { todayIso } from "@/lib/dates";
 import { errMsg, loadPanels } from "@/lib/health/load";
-import { isUuid, normalizeMarker, rangeStatus, resultKey, reviewBlocked, seriesKey, validatePanelDate, validateResult, type Panel, type Result } from "@/lib/health/core";
+import { STATUS_CLASS, STATUS_TEXT, isUuid, normalizeMarker, rangeStatus, resultKey, reviewBlocked, seriesKey, validatePanelDate, validateResult, type Panel, type Result } from "@/lib/health/core";
 import { REPORT_EXT as EXT, REPORT_MAX_BYTES as MAX_BYTES, reportPath } from "@/lib/health/report";
 import ResultForm, { type ResultDraft } from "@/components/health/ResultForm";
 
-const STATUS_TEXT = { below: "Below lab range", within: "Within lab range", above: "Above lab range", unknown: "No range printed" } as const;
-const STATUS_CLASS = { below: "st-low", within: "st-ok", above: "st-high", unknown: "st-na" } as const;
 interface Pending { draft: ResultDraft; include: boolean; source: "manual" | "document" }
 interface Picked { f: File; sha: string; path: string }
 

@@ -39,4 +39,4 @@ export async function loadSupplementsAndSchedules(): Promise<{ supplements: Supp
   return { supplements: (s.data ?? []) as Supplement[], schedules: (c.data ?? []) as Schedule[] };
 }
 
-export const errMsg = (e: unknown) => (e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e));
+export { errMsg } from "@/lib/errors";
